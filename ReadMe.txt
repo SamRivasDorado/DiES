@@ -6,7 +6,7 @@ The files contained in this repository are:
 · DiES_core.py: contains what is needed to construct the key objects (the cracks and the model classes), and calcualte displacements and stresses
 · Modeling_functions.py: contains the functions which run the two key types of models (described below) which can be run with the code in the current version
 · Helper_functions.py: contains multiple functions to perform miscelaneous operations used in other parts of the program
-· Running_Models.py: contains the simplified instructions to run the two types of models
+· Running_Models.py: contains the simplified instructions to run the two types of models. THIS IS THE USER FILE.
 
 As stated above, the current code is designed so that it is useful to perform two types of models:
   1 - Model the displacements and stresses induced by a crack, which may be opening, closing, and/or shearing, due to tractions acting orthogonal and/or parallel to it,
