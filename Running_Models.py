@@ -4,11 +4,15 @@ from Modeling_functions import dynamic_model
 
 ################### Single model ################### 
 
-# To run a static model of what would be the displacements or stresses induced
-# induced by a crack in an elastic medium. The crack may be an opening fracture
-# or a fault, and may be vertical or dipping. Fill the following variables according
-# to the single_model function docstring and run. The result is a single figure
-# plotting the desired parameter.
+# Quick instructions
+
+# To run a static model of the displacements or stresses induced by a crack 
+# in an elastic medium. The crack may be an opening/closing fracture or a fault. 
+
+# Fill the following variables and see the single_model function docstring 
+# for extra details if needed. Then run the code with only until line 41 uncommented.
+    
+# The result is a single figure plotting the desired parameter.
 
 
 crack_inputs=['crack aperture','crack height','x coordinate of the upper crack tip','y coordinate of the upper crack tip'
@@ -36,14 +40,20 @@ parameter='The parameter to plot'
 
 model=single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xlims,ylims,resolution,parameter)
 
-sys.exit()
+# sys.exit()
 
 ################### Dynamic model ################### 
 
+# Quick instructions
+
 # To run a dynamic model of the discontinuities formed as a consequence of dike
-# opening, when dike opens from X to Y % of its final aperture. Fill each of these 
-# variables with the desired parameters and according to the dynamic_model 
-# function docstring. The result is a series of figures saved in the desired
+# opening, when dike opens from a small % to another % of its final aperture. 
+
+# Fill each of these  variables with the desired parameters and check the dynamic_model 
+# function docstring for more details. hen run the code with lines between 
+# 50 and 75 uncommented.
+
+# The result is a series of figures saved in the desired
 # folder which show the evolution of the discontinuities formed.
 
 dike_inputs=['dike aperture','dike height','x coordinate of the upper crack tip','y coordinate of the upper crack tip'
@@ -51,7 +61,7 @@ dike_inputs=['dike aperture','dike height','x coordinate of the upper crack tip'
 
 model_inputs=['Youngs modulus','poissons ratio','density','cohesion','coefficient of internal friction','tensile strength']
 
-py='driving stress parallel to the dike' ; pz='driving stress into the X-Y plane'
+dy='driving stress parallel to the dike' ; dz='driving stress into the X-Y plane'
 
 rx='constant remote stress along x' ; ry='constant remote stress along y'
 
