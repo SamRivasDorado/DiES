@@ -26,7 +26,7 @@ model_inputs=['Youngs modulus','poissons ratio','density','coefficient of intern
 
 dx='driving stress orthogonal to the crack, only needed if crack aperture is 0'
 
-dy='driving stress parallel to the crack' ; dz='driving stress into the X-Y plane'
+dy='driving stress parallel to the crack, >0 normal sense (hanging wall down-dip), <0 reverse' ; dz='driving stress into the X-Y plane'
 
 rx='constant remote stress along x' ; ry='constant remote stress along y'
 
@@ -73,7 +73,7 @@ model_inputs=['Youngs modulus','poissons ratio','density','coefficient of intern
 
 dx='final driving stress orthogonal to the crack, only needed if crack aperture is 0. >0 for a dilatant fault, <0 for a compaction band, 0 for pure shearing'
 
-dy='final driving stress parallel to the crack' ; dz='final driving stress into the X-Y plane'
+dy='final driving stress parallel to the crack, >0 normal sense (hanging wall down-dip), <0 reverse' ; dz='final driving stress into the X-Y plane'
 # dx, dy, and dz all grow together with each step of the model
 
 rx='constant remote stress along x' ; ry='constant remote stress along y'

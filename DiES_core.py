@@ -10,10 +10,8 @@ from matplotlib.ticker import (MultipleLocator)
 # Obtaining helper functions
 from Helper_functions import G
 from Helper_functions import points_distance
-from Helper_functions import angle_between_lines
 from Helper_functions import linear
 from Helper_functions import boundaries_contours
-from Helper_functions import point_side_of_line
 
 ########################### Defining standard parameters ########################### 
 
@@ -61,265 +59,337 @@ def require_bool(value,name):
 
     return bool(value)
 
-########################### Functions for the two spatial parameters ###########################
+########################### Geometry of the crack: local frame and tripolar coordinates ###########################
 
-def Rs(upper_tip,crack_center,lower_tip,point):
-    """
-    Takes the coordinates of the crack's upper and lower tips,
-    and the coordinates of the point of interest,
-    both as tuples/lists/arrays of two values.
-    At least one of the x coordinates of the crack position
-    needs to be a non-zero number, but should be a very close
-    value to 0 to model a vertical crack.
-    
-    Returns the r, r1,r2, and R parameters.
-    """
-    
-    r=points_distance(crack_center,point)
-    r1=points_distance(lower_tip, point)
-    r2=points_distance(upper_tip,point)
-    
-    return r,r1,r2,(r1*r2)**0.5
+# The analytical solutions below (Pollard and Segall, 1987; Pollard and Martel, 2020)
+# are written for a straight crack lying along the axis of its own local frame.
+# Every calculation therefore follows three steps:
+#
+#   1. Build the local frame of the crack (crack_frame): its center, a unit vector t
+#      along the crack and a unit vector n normal to it.
+#   2. Express each point of interest in that frame (local_coordinates), and from
+#      there obtain the signed tripolar coordinates r, theta, r1, theta1, r2, theta2,
+#      R, THETA (tripolar_coordinates).
+#   3. Evaluate the equations in the local frame, where they are exact, and rotate the
+#      resulting displacement vector and stress tensor back to the global X-Y axes
+#      (rotate_vector_to_global, rotate_stress_to_global).
+#
+# See docs/crack_coordinates_and_rotation.md for the derivation and the conventions.
 
-def THETAS(upper_tip,crack_center,lower_tip,point):
+def crack_frame(upper_tip,lower_tip):
     """
-    Takes the coordinates of the crack's upper and lower tips,
-    the coordinates of the crack center,
-    and the coordinates of the point of interest,
-    both as tuples/lists/arrays of two values.
-    
-    'Returns the theta, theta1, theta2, and THETA parameters, in degrees. 
+    Local reference frame of a straight 2D crack.
+
+    Parameters
+    ----------
+    upper_tip, lower_tip: the (x, y) coordinates of the two tips of the crack, in m.
+    If the 'upper' tip is actually deeper than the 'lower' one, they are swapped,
+    so that the frame does not depend on the order in which the tips are given.
+    For a horizontal crack, the tip with the smaller x is taken as the 'upper' one.
+
+    Returns
+    ----------
+    center: np.array (xc, yc), the midpoint of the crack, in m.
+    t: np.array (tx, ty), unit vector along the crack, pointing from the upper tip
+       to the lower tip (down-dip).
+    n: np.array (nx, ny), unit vector normal to the crack, equal to t rotated
+       +90 degrees (counterclockwise): n = (-ty, tx). (t, n) is therefore a
+       right-handed frame, the same handedness as (X, Y). Because t points
+       down-dip, n always has nx >= 0: for a vertical crack, n = (1, 0).
+    a: the half-length of the crack, in m.
+    h: +1 or -1, the orientation factor of the shear driving stresses. It is +1
+       when n points into the hanging wall (the block above the crack, ny > 0)
+       or, for a vertical crack, into the block at x > 0; and -1 when n points
+       into the footwall (cracks dipping towards -x). Multiplying dpy and dpz by
+       h makes their sign convention independent of the dip direction
+       (see displacements()).
     """
-    
-    theta=angle_between_lines(upper_tip,lower_tip,crack_center,point)
-    theta1=angle_between_lines(upper_tip,lower_tip,lower_tip,point)
-    theta2=angle_between_lines(upper_tip,lower_tip,upper_tip,point)
+    up=np.asarray(upper_tip,dtype=float) ; lo=np.asarray(lower_tip,dtype=float)
+
+    # The upper tip is the shallower one; for a horizontal crack, the one with smaller x
+    if up[1]<lo[1] or (up[1]==lo[1] and up[0]>lo[0]):
+        up, lo = lo, up
+
+    length=np.hypot(lo[0]-up[0],lo[1]-up[1])
+    if length==0:
+        raise InputError('The two tips of the crack are the same point')
+
+    center=(up+lo)/2
+    t=(lo-up)/length                 # along the crack, down-dip
+    n=np.array([-t[1],t[0]])         # t rotated +90 degrees
+
+    # n points into the hanging wall when ny = tx > 0; for a vertical crack
+    # (tx = 0) n = (1, 0) and the block at x > 0 is taken as the hanging wall
+    h=-1.0 if t[0]<0 else 1.0
+
+    return center, t, n, length/2, h
+
+def local_coordinates(x,y,center,t,n):
+    """
+    Coordinates of points in the local frame of the crack.
+
+    Parameters
+    ----------
+    x, y: floats or arrays of the same shape, the global coordinates of the points, in m.
+    center, t, n: the center and the unit vectors of the crack, from crack_frame().
+
+    Returns
+    ----------
+    xi: the coordinate along the crack (along t), measured from its center, in m.
+        The upper tip is at xi = -a and the lower tip at xi = +a.
+    eta: the coordinate normal to the crack (along n), in m. eta > 0 on the side
+        towards which n points, eta < 0 on the other side.
+
+    Points exactly on the crack plane (eta = 0, including -0.0) are assigned
+    eta = +0.0, so that points on the crack take the values of its n-side wall.
+    """
+    dx=np.asarray(x,dtype=float)-center[0]
+    dy=np.asarray(y,dtype=float)-center[1]
+
+    # Projections of the position vector onto t and n
+    xi=dx*t[0]+dy*t[1]
+    eta=dx*n[0]+dy*n[1]
+
+    # -0.0 == 0 is True, so this also turns -0.0 into +0.0
+    eta=np.where(eta==0,0.0,eta)
+
+    return xi, eta
+
+def tripolar_coordinates(xi,eta,a):
+    """
+    Signed tripolar coordinates of points around a crack of half-length a
+    lying along the xi axis, from xi = -a to xi = +a.
+
+    Parameters
+    ----------
+    xi, eta: local coordinates, from local_coordinates(), in m.
+    a: the half-length of the crack, in m.
+
+    Returns
+    ----------
+    r, theta: distance (m) and angle (rad) from the center of the crack.
+    r1, theta1: distance and angle from the lower tip (xi = +a).
+    r2, theta2: distance and angle from the upper tip (xi = -a).
+    R, THETA: R = (r1*r2)**0.5 and THETA = (theta1 + theta2)/2.
+
+    All angles are measured from the +xi direction (along t, down-dip) and are
+    positive towards +eta (towards n), with np.arctan2, so they range from -pi to pi.
+    The sign is what tells the two sides of the crack apart: theta, theta1 and
+    theta2 are > 0 on the n side and < 0 on the other side. With these angles
+    the complex quantities of the solution take the principal branch, e.g.
+    (z**2 - a**2)**0.5 = R*exp(i*THETA) and z/(z**2 - a**2)**0.5 = (r/R)*exp(i*(theta-THETA)),
+    with z = xi + i*eta, which is continuous everywhere except across the crack.
+    """
+    r=np.hypot(xi,eta) ; theta=np.arctan2(eta,xi)
+    r1=np.hypot(xi-a,eta) ; theta1=np.arctan2(eta,xi-a)
+    r2=np.hypot(xi+a,eta) ; theta2=np.arctan2(eta,xi+a)
+
+    R=(r1*r2)**0.5
     THETA=(theta1+theta2)/2
-    
-    return theta, theta1, theta2, THETA
+
+    return r, theta, r1, theta1, r2, theta2, R, THETA
+
+def rotate_vector_to_global(v_t,v_n,t,n):
+    """
+    Rotates a vector from the local frame of the crack to the global X-Y axes.
+
+    v_t, v_n: the components of the vector along t and along n.
+    t, n: the unit vectors of the crack, from crack_frame().
+
+    Returns vx, vy: v = v_t*t + v_n*n.
+    """
+    return v_t*t[0]+v_n*n[0], v_t*t[1]+v_n*n[1]
+
+def rotate_stress_to_global(s_tt,s_nn,s_tn,t,n):
+    """
+    Rotates an in-plane stress tensor from the local frame of the crack
+    to the global X-Y axes.
+
+    s_tt: normal stress on planes normal to t (acting along the crack),
+    s_nn: normal stress on planes normal to n (acting across the crack),
+    s_tn: shear stress on those planes.
+    t, n: the unit vectors of the crack, from crack_frame().
+
+    Returns sxx, syy, sxy, from S = s_tt*(t t) + s_nn*(n n) + s_tn*(t n + n t),
+    where (t n) is the outer product of t and n.
+    """
+    sxx=s_tt*t[0]**2+s_nn*n[0]**2+2*s_tn*t[0]*n[0]
+    syy=s_tt*t[1]**2+s_nn*n[1]**2+2*s_tn*t[1]*n[1]
+    sxy=s_tt*t[0]*t[1]+s_nn*n[0]*n[1]+s_tn*(t[0]*n[1]+n[0]*t[1])
+
+    return sxx, syy, sxy
+
+def check_crack_geometry(upper_tip,crack_center,lower_tip,center,a,a_input=None):
+    """
+    Checks that the crack_center (and a, if given) passed to displacements()
+    or stresses() are consistent with the tips, since the solution requires
+    the center to be the midpoint of the crack and a its half-length.
+    """
+    tolerance=1e-6*max(a,1)
+
+    if np.hypot(crack_center[0]-center[0],crack_center[1]-center[1])>tolerance:
+        raise InputError('crack_center '+str(tuple(crack_center))+' is not the midpoint of the tips '
+                         +str(tuple(center)))
+
+    if a_input is not None and abs(a_input-a)>tolerance:
+        raise InputError('a = '+str(a_input)+' m is not the half-length of the crack, '+str(a)+' m')
 
 ########################### Displacement field equations ###########################
 
 def displacements(dpx,dpy,dpz,nu,E,upper_tip,crack_center,lower_tip,point):
     """
+    Displacements around a straight 2D crack loaded by uniform driving stresses
+    on its walls, in plane strain (Pollard and Segall, 1987; Pollard and Martel, 2020).
+
     Parameters
     ---------------
-    dpx = Driving stress acting along the x axis in Pa,
-    dpy = Driving stress acting along the y axis in Pa,
-    v = Poissons ratio (unitless),
-    E = Youngs Modulus in Pa,
-    upper_tip: the coordinates of the crack's upper tip,
-    crack_center: the coordinates of the crack center,
-    lower_tip: the coordinates of the crack's lower tip,
-    point: the coordinates of the point of interest
-    All coordinates are 1D array-like objects of two values. 
-     
-    
-    Returns 
+    dpx: driving stress normal to the crack walls, in Pa. > 0 opens the crack
+         (mode I). For a vertical crack it acts along x.
+    dpy: driving stress parallel to the crack walls, in the X-Y plane, in Pa
+         (mode II). > 0 makes the hanging wall slide down-dip relative to the
+         footwall (normal sense) and < 0 up-dip (reverse sense). For a vertical
+         crack, > 0 makes the block at x > 0 move down relative to the block at x < 0.
+    dpz: driving stress parallel to the crack walls, out of the X-Y plane, in Pa
+         (mode III). > 0 makes the hanging wall (the block at x > 0 for a
+         vertical crack) move towards +z relative to the footwall.
+    nu: Poissons ratio (unitless),
+    E: Youngs Modulus in Pa,
+    upper_tip, crack_center, lower_tip: the (x, y) coordinates of the upper tip,
+    the center and the lower tip of the crack, in m. crack_center must be the
+    midpoint of the tips. The crack may have any orientation.
+    point: the coordinates (x, y) of the point(s) of interest, in m. x and y may be
+    floats or arrays of the same shape (e.g. the whole grid at once).
+
+    Returns
     ---------------
-    The in-plane displacements at the point of interest, as 1D array-like
-    objects, u_x, u_y, u_z
+    ux, uy, uz: the displacements at the point(s) of interest along X, Y, and Z, in m.
+
+    The solution is evaluated in the local frame of the crack (t along the crack,
+    n normal to it, see crack_frame) and rotated to the global axes:
+        u_n: displacement normal to the crack,
+        u_t: displacement parallel to the crack,
+        (ux, uy) = u_t*t + u_n*n.
+    Points exactly on the crack take the displacement of its n-side wall.
+    The solution is singular at the tips.
     """
-    
-    # Modifying the investigation point when the investigated x value
-    # is at the x coordinates of the tips, to avoid zero-errors
-    # if point[0]==crack_center[0]:
-    #     point=(point[0]+0.1,point[-1])
-    
-    r=Rs(upper_tip,crack_center,lower_tip,point)
-    t=THETAS(upper_tip,crack_center,lower_tip,point)
-    
-    t_rad=[]
-    for t in t:
-        t_rad.append(np.deg2rad(t))
-    
-    """
-    Calculating u_x 
-    """
-    
-    """
-    First, we fullfill the condition of positive traction directed 
-    toward one side of the fracture, and negative traction to the other 
-    """
-    
-    x=(upper_tip[0],crack_center[0],lower_tip[0])
-    y=(upper_tip[1],crack_center[1],lower_tip[1])
-    
-    if upper_tip[0]==lower_tip[0]:
-        if point[0]<crack_center[0]:
-            dpx=-dpx
-    
-    else:
-        params=np.polyfit(x,y,1)
-        function=np.poly1d(params)
-        y_check=function(point[0])
-            
-        if point[1]<y_check and params[0]<0:
-            dpx=-dpx
-        
-        elif point[1]>y_check and params[0]>0:
-            dpx=-dpx
-             
-    first_term=2*(1-nu)
-    second_term=r[-1]*np.sin(t_rad[-1])-r[0]*np.sin(t_rad[0])
-    third_term=r[0]*np.sin(t_rad[0])*((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1])-1)
-    
-    fourth_term=(1-2*nu)
-    fifth_term=r[-1]*np.cos(t_rad[-1])-r[0]*np.cos(t_rad[0])
-    sixth_term=r[0]*np.sin(t_rad[0])*((r[0]/r[-1])*np.sin(t_rad[0]-t_rad[-1]))
-    
-    upper_term=dpx*(first_term*second_term-third_term)-dpy*(fourth_term*fifth_term+sixth_term)
-    ux=upper_term/(2*G(E,nu))
-    
-    """
-    Calculating u_y 
-    """
-    
-    first_term=2*(1-nu)
-    second_term=r[-1]*np.sin(t_rad[-1])-r[0]*np.sin(t_rad[0])
-    third_term=r[0]*np.sin(t_rad[0])*((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1])-1)
-    
-    fourth_term=(1-2*nu)
-    fifth_term=r[-1]*np.cos(t_rad[-1])-r[0]*np.cos(t_rad[0])
-    sixth_term=r[0]*np.sin(t_rad[0])*((r[0]/r[-1])*np.sin(t_rad[0]-t_rad[-1]))
-    
-    upper_term=dpy*(first_term*second_term+third_term)+dpx*(fourth_term*fifth_term-sixth_term)
-    uy=upper_term/(2*G(E,nu))
-    
-    """
-    Correcting the direction of the displacement vector uy,
-    so that it points downward above the crack center, 
-    and upward below the crack center.
-    """
-    
-    if upper_tip[0]==lower_tip[0]:
-        if point[0]>crack_center[0]:
-            uy=-uy
-            
-    else:
-        if point[1]<y_check and params[0]<0:
-            uy=-uy
-        
-        elif point[1]>y_check and params[0]>0:
-            uy=-uy
-            
-    """
-    Calculating u_z 
-    Pollard and Segall, 1986
-    """          
-    uz=(2*dpz*(r[-1]*np.sin(t_rad[-1])-r[0]*np.sin(t_rad[0])))/(2*G(E,nu))
-        
+    center, t, n, a, h = crack_frame(upper_tip,lower_tip)
+    check_crack_geometry(upper_tip,crack_center,lower_tip,center,a)
+
+    xi, eta = local_coordinates(point[0],point[1],center,t,n)
+    r, theta, r1, theta1, r2, theta2, R, THETA = tripolar_coordinates(xi,eta,a)
+
+    # Shear driving stresses with a sign convention independent of the dip direction
+    s=h*dpy ; s3=h*dpz
+
+    shear=G(E,nu)
+
+    # Terms shared by the equations, with z = xi + i*eta:
+    # Im[(z**2-a**2)**0.5 - z] and Re[(z**2-a**2)**0.5 - z]
+    im_Z=R*np.sin(THETA)-r*np.sin(theta)
+    re_Z=R*np.cos(THETA)-r*np.cos(theta)
+    # eta*Re[z/(z**2-a**2)**0.5 - 1] and eta*Im[z/(z**2-a**2)**0.5]
+    eta_re=r*np.sin(theta)*((r/R)*np.cos(theta-THETA)-1)
+    eta_im=r*np.sin(theta)*((r/R)*np.sin(theta-THETA))
+
+    # Displacement normal to the crack (along n)
+    u_n=(dpx*(2*(1-nu)*im_Z-eta_re)-s*((1-2*nu)*re_Z+eta_im))/(2*shear)
+
+    # Displacement parallel to the crack (along t)
+    u_t=(s*(2*(1-nu)*im_Z+eta_re)+dpx*((1-2*nu)*re_Z-eta_im))/(2*shear)
+
+    # Out-of-plane displacement (Pollard and Segall, 1987)
+    uz=(2*s3*im_Z)/(2*shear)
+
+    # Rotation to the global axes
+    ux, uy = rotate_vector_to_global(u_t,u_n,t,n)
+
     return ux,uy,uz
 
 ########################### Traction boundary value problem, stress field equations ###########################
 
 def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,crack_center,lower_tip,a,point):
     """
+    Stresses around a straight 2D crack loaded by uniform driving stresses on its
+    walls, in plane strain (Pollard and Segall, 1987; Pollard and Martel, 2020),
+    plus uniform remote stresses. Tension positive.
+
     Parameters
     ---------------
-    dpx: Driving stress normal to the X plane,
-    dpy: Driving stress normal to the Y plane,
+    dpx: driving stress normal to the crack walls (mode I), in Pa,
+    dpy: driving stress parallel to the crack walls in the X-Y plane (mode II), in Pa,
+    dpz: driving stress parallel to the crack walls out of the X-Y plane (mode III), in Pa,
+    with the same sign conventions as in displacements().
     rxx: Remote stress in Pa, normal to the X plane,
-    ryy: Maximum remote stress in Pa, normal to the Y plane,
+    ryy: Remote stress in Pa, normal to the Y plane,
     rxy: Shear stress on plane X in the direction of the Y axis,
     rxz: Shear stress on plane X in the direction of the Z axis,
     ryz: Shear stress on plane Y in the direction of the Z axis,
-    all in Pa.
-    
-    v: Poissons ratio (unitless),
-    E: Youngs Modulus in Pa,
-    the coordinates of the crack's upper and lower tips, and crack center,
-    a: the fractures half length in m,
-    point: A 1D array-like object of two values, 
-    the coordinates of the point of interest 
-    
+    all in Pa, in the global X-Y axes. They may be floats or arrays with the shape of x and y.
+
+    nu: Poissons ratio (unitless),
+    E: Youngs Modulus in Pa (not used by the stress solution, kept for symmetry
+    with displacements()),
+    upper_tip, crack_center, lower_tip: the (x, y) coordinates of the crack's
+    upper tip, center and lower tip, in m. The crack may have any orientation.
+    a: the crack's half-length in m. It must match the distance between the tips.
+    point: the coordinates (x, y) of the point(s) of interest, in m. x and y may be
+    floats or arrays of the same shape.
+
     Return
     ---------------
-    The in-plane stresses at the point of interest,
+    The stresses at the point(s) of interest, in the global axes,
     sxx, syy, sxy (=syx), sxz, syz, szz and t (the maximum in-plane shear stress),
     in this order, all in Pa.
-    """
 
+    The crack-induced stresses are evaluated in the local frame of the crack
+    (s_nn across it, s_tt along it, s_tn shear, see crack_frame) and the
+    tensor is rotated to the global axes before adding the remote stresses.
+    Points exactly on the crack take the values of its n-side wall.
+    The solution is singular at the tips.
     """
-    Modifying the investigation point when the investigated x value
-    is at the x coordinates of the tips, to avoid zero-errors
-    """
-    
-    if point[0]==crack_center[0]:
-        point=(crack_center[0]+0.1,point[-1])
-        
-    r=Rs(upper_tip,crack_center,lower_tip,point)
-    t=THETAS(upper_tip,crack_center,lower_tip,point)
-    
-    t_rad=[]
-    for t in t:
-        t_rad.append(np.deg2rad(t))
-   
-    """
-    Correcting the sign of the fracture parallel stresses 
-    depending on the side of the fracture to accurately model shearing: 
-    left, positive, right, negative.
-    """
-    
-    side = point_side_of_line(upper_tip,lower_tip,point)
-    if side==1:
-        dpy=-dpy 
-    
-    # Calculating sigma_xx
-    first_term=rxx
-    second_term=((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1]))-1+((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.sin(3*t_rad[-1])
-    third_term=((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.cos(3*t_rad[-1])
-    sxx=first_term+dpx*second_term+dpy*third_term
-    
-    # Calculating sigma_yy
-    first_term=ryy
-    second_term=((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1]))-1-((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.sin(3*t_rad[-1])
-    third_term=(2*r[0]/(r[-1]))*np.sin(t_rad[0]-t_rad[-1])
-    fourth_term=((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.cos(3*t_rad[-1])
-    syy=first_term+dpx*second_term+dpy*(third_term-fourth_term)
-    
-    # Calculating sigma_xy
-    first_term=rxy
-    
-    # When calculating the shear stresses, driving stress should be negative 
-    # when applied to the left side of the fracture
-    
-    # if first_term==rxy:
-    #     # if point[0]<crack_center[0]:
-    #     if point[0]<crack_center[0] and point[1]<crack_center[1]:
-    #         dpx=-dpx
-    #         dpy=-dpy
-    #     elif point[0]<crack_center[0] and point[1]>crack_center[1]:
-    #         dpx=-dpx   
-    #         dpy=-dpy
-            
-    second_term=((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1]))-1-(((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.sin(3*t_rad[-1]))
-    third_term=(((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.cos(3*t_rad[-1]))
-    sxy=first_term+dpy*second_term+dpx*third_term
-    
-    # if point[0]<crack_center[0] and point[1]<crack_center[1]:
-    #     sxy=-sxy
-    
-    # elif point[0]<crack_center[0] and point[1]>crack_center[1]:
-    #     sxy=-sxy
-    
-    # else:
-    #     sxy=sxy
+    center, t, n, a_tips, h = crack_frame(upper_tip,lower_tip)
+    check_crack_geometry(upper_tip,crack_center,lower_tip,center,a_tips,a)
 
-    # Calculating sigma_xz
-    sxz=rxz+dpz*((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1])-1)
-    
-    # Calculating sigma_yz
-    syz=ryz+dpz*((r[0]/r[-1])*np.sin(t_rad[0]-t_rad[-1])-1)
-    
-    # Calculating sigma_zz
+    xi, eta = local_coordinates(point[0],point[1],center,t,n)
+    r, theta, r1, theta1, r2, theta2, R, THETA = tripolar_coordinates(xi,eta,a)
+
+    # Shear driving stresses with a sign convention independent of the dip direction
+    s=h*dpy ; s3=h*dpz
+
+    # Terms shared by the equations, with z = xi + i*eta:
+    # C = Re[z/(z**2-a**2)**0.5] - 1 and S = Im[z/(z**2-a**2)**0.5]
+    C=(r/R)*np.cos(theta-THETA)-1
+    S=(r/R)*np.sin(theta-THETA)
+    # q = a**2*eta/R**3
+    q=(a**2)*(r/(R**3))*np.sin(theta)
+
+    # Normal stress across the crack (on planes parallel to it)
+    s_nn=dpx*(C+q*np.sin(3*THETA))+s*(q*np.cos(3*THETA))
+
+    # Normal stress along the crack (on planes normal to it)
+    s_tt=dpx*(C-q*np.sin(3*THETA))+s*(2*S-q*np.cos(3*THETA))
+
+    # In-plane shear stress
+    s_tn=s*(C-q*np.sin(3*THETA))+dpx*(q*np.cos(3*THETA))
+
+    # Out-of-plane shear stresses on planes parallel (s_nz) and normal (s_tz) to the crack
+    s_nz=s3*C
+    s_tz=s3*S
+
+    # Rotation to the global axes and remote stresses
+    sxx, syy, sxy = rotate_stress_to_global(s_tt,s_nn,s_tn,t,n)
+    sxz, syz = rotate_vector_to_global(s_tz,s_nz,t,n)
+
+    sxx=rxx+sxx ; syy=ryy+syy ; sxy=rxy+sxy
+    sxz=rxz+sxz ; syz=ryz+syz
+
+    # Calculating sigma_zz, plane strain
     szz=nu*(sxx+syy)
-    
-    # Calculating t, the maximum shear stress
-    t=0.5*(((syy-sxx)**2)+4*(sxy**2))**0.5
-        
-    return sxx,syy,sxy,sxz,syz,szz,t
 
+    # Calculating t, the maximum in-plane shear stress
+    t_max=0.5*(((syy-sxx)**2)+4*(sxy**2))**0.5
+
+    return sxx,syy,sxy,sxz,syz,szz,t_max
 
 ########################### Model class ###########################
 
@@ -365,19 +435,23 @@ class crack(object):
     
     def x(self):
         """
-        Return the driving stress along x
+        Return the driving stress normal to the crack walls (mode I, > 0 opens it).
+        For a vertical crack it acts along x.
         """
         return self.dpx
     
     def y(self):
         """
-        Return the driving stress along y
+        Return the driving stress parallel to the crack walls in the X-Y plane
+        (mode II, > 0 normal sense: the hanging wall slides down-dip).
+        For a vertical crack it acts along y.
         """
         return self.dpy
     
     def z(self):
         """
-        Return the driving stress along z
+        Return the driving stress parallel to the crack walls out of the X-Y plane
+        (mode III).
         """
         return self.dpz
     
@@ -761,10 +835,12 @@ class model(object):
             dp=0 ; ds=dy ; dt=dy ; plot_params=boundaries_contours(ds, step) ; label=r'u$_y$ (m)'
             
         elif displacement=='uxy':
-            dp=dx ; ds=dy ; dt=(dx+dy)/2 ; label=r'u$_{xy}$ (m)'
+            # Magnitude of the in-plane displacement vector
+            dp=dx ; ds=dy ; dt=np.hypot(dx,dy) ; label=r'|u$_{xy}$| (m)'
             
         if option=='vectors':
-            plot=ax.quiver(x,y,dp,ds,dt, width=0.0050, scale=np.amax(dt)/0.05, cmap='viridis')
+            # The arrows are scaled with the largest in-plane displacement magnitude
+            plot=ax.quiver(x,y,dp,ds,dt, width=0.0050, scale=np.nanmax(np.hypot(dx,dy))/0.1, cmap='viridis')
             cbar=figure.colorbar(plot,extend='both')
             cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
             cbar.ax.tick_params(labelsize=12)

@@ -77,8 +77,10 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     Only used if the crack aperture is 0 (a fault), because otherwise it is
     calculated from the aperture. >0 values model a dilatant fault,
     and <0 values model a compaction band
-    dy : driving stress parallel to the crack wall as an float/int, in Pa, where
-    <0 values are right-lateral motion, and >0 are a left-lateral motion
+    dy : driving stress parallel to the crack wall as an float/int, in Pa.
+    >0 values make the hanging wall slide down-dip (normal sense) and <0
+    values up-dip (reverse sense). For a vertical crack, >0 makes the block
+    at x > 0 move down. See docs/crack_coordinates_and_rotation.md
     dz : out-of-plane driving stress as an float/int, in Pa, usually 0
     rx : constant remote stress along the X axis as an float/int, in Pa
     ry : constant remote stress along the Y axis as an float/int, in Pa
@@ -234,7 +236,10 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     Only used if the crack aperture is 0 (a fault), because otherwise it is
     calculated from the aperture. It can be >0 (a dilatant fault), <0
     (a compaction band), or 0 (pure shearing).
-    dy : final driving stress parallel to the crack wall as an float/int, in Pa
+    dy : final driving stress parallel to the crack wall as an float/int, in Pa.
+    >0 values make the hanging wall slide down-dip (normal sense) and <0
+    values up-dip (reverse sense). For a vertical crack, >0 makes the block
+    at x > 0 move down. See docs/crack_coordinates_and_rotation.md
     dz : final out-of-plane driving stress as an float/int, in Pa, usually 0
     All three driving stresses are scaled together with each step of the model,
     so the values given here are those reached at 100% of the investigation range.
