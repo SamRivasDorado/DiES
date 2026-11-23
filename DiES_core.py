@@ -492,97 +492,87 @@ class model(object):
         self.layers_c=layers_c ; self.layers_mu=layers_mu; self.layers_T=layers_T
         
         # The coulomb angle is defined implicitly after mu for each layer
-        self.layers_coula=0.5*np.arctan(1/self.layers_mu)
+        self.layers_coula=0.5*np.arctan(1/np.asarray(self.layers_mu,dtype=float))
     
         # self.layers_m=layers_m
         self.g=g
         
+    def n_layers(self):
+        """
+        Returns the number of layers of the model, as an int.
+        A single value in y_position_layers defines a 1-layer model;
+        n+1 values (bases from bottom to top, plus the top) define n layers.
+        """
+        bounds=np.atleast_1d(np.asarray(self.y_position_layers,dtype=float))
+        
+        if bounds.size==1:
+            return 1
+        
+        return bounds.size-1
+    
+    def layer_index(self,y):
+        """
+        Parameters
+        ----------
+        y: a float/int or an array-like object with y coordinates, in m.
+        
+        Returns
+        ----------
+        An int array with the shape of y containing, for each y, the index
+        of the layer it belongs to (0 = deepest layer). A layer contains its
+        base and extends up to, but not including, the base of the next layer.
+        Points below the base of the deepest layer are assigned to it, and
+        points above the top of the model to the uppermost layer.
+        """
+        y=np.asarray(y,dtype=float)
+        
+        if self.n_layers()==1:
+            return np.zeros(np.shape(y),dtype=int)
+        
+        bounds=np.asarray(self.y_position_layers,dtype=float)
+        if np.any(np.diff(bounds)<=0):
+            raise InputError('y_position_layers must be strictly increasing, from bottom to top')
+        
+        index=np.searchsorted(bounds,y,side='right')-1
+        
+        return np.clip(index,0,self.n_layers()-1)
+    
+    def layer_values(self,values,name):
+        """
+        Returns the per-layer values of a property as a 1D float array,
+        after checking that there is exactly one value per layer.
+        """
+        values=np.atleast_1d(np.asarray(values,dtype=float))
+        
+        if values.size!=self.n_layers():
+            raise InputError(name+' has '+str(values.size)+' value(s), but the model has '
+                             +str(self.n_layers())+' layer(s)')
+        
+        return values
+        
     def grid(self): 
         """
         Returns a 3D array where the first two arrays are the 
-        X and Y coordinates of the grid, and the last are the 
-        E, v, density, cohesion, and internal friction coeff. 
-        values at each node of the grid.
+        X and Y coordinates of the grid, and the rest are the 
+        E, v, density, cohesion, internal friction coeff., Coulomb angle
+        and tensile strength values at each node of the grid.
         """
         
         x_cells=np.arange(self.x_limits[0],self.x_limits[1],self.x_cellsize)
         y_cells=np.arange(self.y_limits[0],self.y_limits[1],self.y_cellsize)
         x, y = np.meshgrid(x_cells+self.x_cellsize/2,y_cells)
-                
-        E_values=[] ; v_values=[] ; d_values=[]
-        c_values=[] ; mu_values=[] ; coula_values=[]
-        T_values=[]
-        C_values=[] ; m_values=[]
-                
-        i=0
         
-        if type(self.y_position_layers)==int or type(self.y_position_layers)==float:
-            E_values=np.full(np.shape(x),self.layers_E)
-            v_values=np.full(np.shape(x),self.layers_v)
-            d_values=np.full(np.shape(x),self.layers_d)
-            c_values=np.full(np.shape(x),self.layers_c)
-            mu_values=np.full(np.shape(x),self.layers_mu)
-            T_values=np.full(np.shape(x),self.layers_T)
-            coula_values=np.full(np.shape(x),self.layers_coula)
-            
-            # This makes the input easier when one wants to create a 1-layer model
-        else:    
-            
-            for row in y:
-                new_row_E=[] ; new_row_v=[] ; new_row_d=[]
-                new_row_c=[] ; new_row_mu=[]; new_row_coula=[]
-                new_row_T=[]
-                # new_row_C=[]; new_row_m=[] 
+        # Each node takes the properties of the layer that contains it
+        index=self.layer_index(y)
+        
+        properties=[(self.layers_E,'layers_E'),(self.layers_v,'layers_v'),
+                    (self.layers_d,'layers_d'),(self.layers_c,'layers_c'),
+                    (self.layers_mu,'layers_mu'),(self.layers_coula,'layers_coula'),
+                    (self.layers_T,'layers_T')]
+        
+        values=[self.layer_values(prop,name)[index] for prop,name in properties]
                 
-                if row[0]<self.y_position_layers[i+1]:
-                    
-                    for value in row:
-                        new_row_E.append(self.layers_E[i])
-                        new_row_v.append(self.layers_v[i])
-                        new_row_d.append(self.layers_d[i])
-                        new_row_c.append(self.layers_c[i])
-                        new_row_mu.append(self.layers_mu[i])
-                        new_row_coula.append(self.layers_coula)
-                        new_row_T.append(self.layers_T)
-                        # new_row_C.append(self.layers_C[i])
-                        # new_row_m.append(self.layers_m[i])
-                
-                elif row[0]>=self.y_position_layers[i+1]:
-                    
-                    for value in row:
-                        new_row_E.append(self.layers_E[i])
-                        new_row_v.append(self.layers_v[i])
-                        new_row_d.append(self.layers_d[i])
-                        new_row_c.append(self.layers_c[i])
-                        new_row_mu.append(self.layers_mu[i])
-                        new_row_coula.append(self.layers_coula[i])
-                        new_row_coula.append(self.layers_T[i])
-                        # new_row_C.append(self.layers_C[i])
-                        # new_row_m.append(self.layers_m[i])
-                    
-                    i=i+1
-                    
-                E_values.append(new_row_E)
-                v_values.append(new_row_v)
-                d_values.append(new_row_d)
-                c_values.append(new_row_c)
-                mu_values.append(new_row_mu)
-                coula_values.append(new_row_coula)
-                T_values.append(new_row_T)
-                # C_values.append(new_row_C)
-                # m_values.append(new_row_m)
-                
-            E_values=np.asarray(E_values)
-            v_values=np.asarray(v_values)
-            d_values=np.asarray(d_values)
-            c_values=np.asarray(c_values)
-            mu_values=np.asarray(mu_values)
-            coula_values=np.asarray(coula_values)
-            T_values=np.asarray(T_values)
-            # C_values=np.asarray(C_values)
-            # m_values=np.asarray(m_values)
-                
-        grid=np.array([x, y, E_values,v_values,d_values,c_values,mu_values, coula_values, T_values])
+        grid=np.array([x, y]+values)
         
         return grid
     
@@ -609,12 +599,12 @@ class model(object):
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         
-        if type(self.y_position_layers)==int or type(self.y_position_layers)==float:
+        if self.n_layers()==1:
             ax.text(0.93,0.93,
-                    'E = '+str(self.layers_E/1E9)+' GPa\n'+'v = '+str(self.layers_v)
-                    +'\n'+r'$\rho$ = '+str(self.layers_d)+r' kg/m$^3$'
-                    +'\n'+r'C$_o$ = '+str(self.layers_c/1e6)+' MPa'
-                    +'\n'+r'$\mu$ = '+str(self.layers_mu),
+                    'E = '+str(self.layer_values(self.layers_E,'layers_E')[0]/1E9)+' GPa\n'+'v = '+str(self.layer_values(self.layers_v,'layers_v')[0])
+                    +'\n'+r'$\rho$ = '+str(self.layer_values(self.layers_d,'layers_d')[0])+r' kg/m$^3$'
+                    +'\n'+r'C$_o$ = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa'
+                    +'\n'+r'$\mu$ = '+str(self.layer_values(self.layers_mu,'layers_mu')[0]),
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',
                     transform=ax.transAxes,fontsize=14, zorder=5)
@@ -644,8 +634,11 @@ class model(object):
         and sigma2 (s2, the vertical stress), 
         for every point of the grid. 
         
-        Assumes that the y coordinates 
-        are negative depth, and uniaxial lithostatic conditions.
+        Assumes that the y coordinates are negative depth, with the
+        surface at y=0, and uniaxial lithostatic conditions. The vertical
+        stress is the weight of the overlying column, integrated layer by
+        layer: the uppermost layer is assumed to extend up to the surface
+        and the deepest one indefinitely downwards.
         
         Needs g in m/s2. 
         
@@ -656,39 +649,32 @@ class model(object):
         the returned stresses are negative.
         """
         
-        if type(self.y_position_layers)==tuple:
-            y_boundaries=list(self.y_position_layers)
-            
         g=self.g
         
         grid=self.grid()
-        y=np.flip(grid[1]) ; v=np.flip(grid[3]) ; d=np.flip(grid[4])
+        y=grid[1] ; v=grid[3]
         
-        rows1=[] ; rows2=[]
+        densities=self.layer_values(self.layers_d,'layers_d')
+        n=self.n_layers()
         
-        previous_pressure=0
-        i=0
-        for row,nu,densities in zip(y,v,d):
-            syy=densities*g*abs(row)+previous_pressure
-            syy=np.asarray(syy)
-            sxx=syy*(nu/(1-nu))
-            rows1.append(syy)
-            rows2.append(sxx)
-            
-            if type(self.y_position_layers)==float or type(self.y_position_layers)==int:
-                continue
-                
-            elif row[0]+row[0]*0.01<y_boundaries[i]<row[0]-row[0]*0.01:
-                i=i+1
-                previous_pressure=syy[0]
+        # Lower and upper limits of each layer
+        if n==1:
+            lower=np.array([-np.inf]) ; upper=np.array([0.0])
+        else:
+            bounds=np.asarray(self.y_position_layers,dtype=float)
+            lower=bounds[:-1].copy() ; upper=bounds[1:].copy()
+            lower[0]=-np.inf ; upper[-1]=0.0
         
-        rows1=np.asarray(rows1)
-        rows2=np.asarray(rows2)
+        # Weight of the column above each point: thickness of every layer
+        # between the point and the surface times its density and g
+        syy=np.zeros(np.shape(y))
+        for d,low,up in zip(densities,lower,upper):
+            thickness=np.clip(up-np.maximum(low,y),0,None)
+            syy=syy+d*g*thickness
         
-        rows1=np.flip(rows1)
-        rows2=np.flip(rows2)
+        sxx=syy*(v/(1-v))
         
-        return -rows1*1,-rows2*1
+        return -syy*1,-sxx*1
     
     def model_displacements(self,crack):
         """
@@ -1321,18 +1307,18 @@ class model(object):
         elif step>=1:
             ax.clabel(contours,fmt='%1.1f')
         
-        if type(self.y_position_layers)==float or type(self.y_position_layers)==int:
+        if self.n_layers()==1:
             ax.text(0.97,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa ; '+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa\n'
-                    +r'$\alpha$ = '+str(angle)+'° ; '+ r'$\rho$ = '+str(self.layers_d)+' kg m$^3$'
-                    +'\nC = '+str(self.layers_c/1e6)+' MPa ; '+r'$\mu$ = '+str(self.layers_mu)+'; '
-                    +r'$\theta_{opt}$ = '+str(round(90-np.degrees(self.layers_coula),2))+'°',
+                    +r'$\alpha$ = '+str(angle)+'° ; '+ r'$\rho$ = '+str(self.layer_values(self.layers_d,'layers_d')[0])+' kg m$^3$'
+                    +'\nC = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa ; '+r'$\mu$ = '+str(self.layer_values(self.layers_mu,'layers_mu')[0])+'; '
+                    +r'$\theta_{opt}$ = '+str(round(90-np.degrees(self.layer_values(self.layers_coula,'layers_coula')[0]),2))+'°',
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',
                     transform=ax.transAxes,fontsize=11, zorder=5)
         else:
             ax.text(0.98,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa\n'+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa\n'
                     +r'$\alpha$ = '+str(angle)+'°'
-                    +'\nC = '+str(self.layers_c/1e6)+' MPa ; '+r'$\mu$ = '+str(self.layers_mu)
+                    +'\nC = '+str(np.asarray(self.layers_c,dtype=float)/1e6)+' MPa ; '+r'$\mu$ = '+str(np.asarray(self.layers_mu,dtype=float))+'; '
                     +r'$\theta_{opt}$ = '+str(np.round(90-np.degrees(self.layers_coula),2))+'°',
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',

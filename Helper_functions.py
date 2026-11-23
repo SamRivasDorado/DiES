@@ -134,20 +134,12 @@ def linear(x,m,n):
     y: an array-like object of the y values as evaluated by the function
     """
     
-    y=[]
-        
-    if type (x)==list or type (x)==tuple:
-        for value in x:
-            y.append(x*m+n)
-        y=np.asarray(y)
-            
-    elif type(x)==int or type(x)==float:
-        y=x*m+n
+    # Lists and tuples are evaluated element by element and returned as an array;
+    # ints, floats (including numpy scalars) and numpy arrays directly
+    if isinstance(x,(list,tuple)):
+        return np.asarray([value*m+n for value in x])
     
-    elif 'ndarray' in str(type(x)):
-        y=x*m+n
-    
-    return y
+    return x*m+n
     
 def power_law(x,C,m):
     'Takes in C, the constant in a power law function'
@@ -308,33 +300,30 @@ def scale_arrows(dpx,dpy,dx,dy):
     the arguments for the 'scale' arg in the 'quiver' method.
     """
     
+    dpx=float(dpx) ; dpy=float(dpy)
+    
+    if not (np.isfinite(dpx) and np.isfinite(dpy)):
+        raise ValueError('scale_arrows needs finite driving pressures, got dpx='+str(dpx)+', dpy='+str(dpy))
+    
     if dpx>dpy:
-        if dpx>=0 and dpy>=0:
-            maximum=np.amax(abs(dx))
-            denom=0.05
-        
-        elif dpx<=0 and dpy<=0:
-            maximum=np.amax(abs(dx))
-            denom=0.05
-            
-        elif dpx>=0 and dpy<0:
-            maximum=np.amax(abs(dx))
-            denom=0.05
-        
-    elif dpx<dpy: 
-        if dpx>=0 and dpy>=0:
-            maximum=np.amax(abs(dy))
-            denom=0.05
-        
-        if dpx<=0 and dpy<=0:
+        maximum=np.amax(abs(dx))
+        denom=0.05
+    
+    elif dpx<dpy:
+        if dpy<=0:
+            # Both compressive
             maximum=np.amax(abs(dy))
             denom=0.025
-            
-        elif dpy>0 and dpx<=0:
+        elif dpx>0:
+            # Both tensile
+            maximum=np.amax(abs(dy))
+            denom=0.05
+        else:
+            # dpx<=0<dpy
             maximum=np.amax(abs(dx))
             denom=0.05
-            
-    elif dpx==dpy:
+    
+    else:
         maximum=np.amax(abs(dx))
         denom=0.04
             
