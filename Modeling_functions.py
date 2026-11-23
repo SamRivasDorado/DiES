@@ -15,6 +15,7 @@ from matplotlib.ticker import (MultipleLocator)
 from DiES_core import crack
 from DiES_core import model
 from DiES_core import require_bool
+from DiES_core import InputError
 
 # Obtain the function to evaluate the stress state
 from Failure_Determination import evaluate_stress_state
@@ -67,9 +68,10 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
-                    cohesion as an float/int in Pa,
                     mu, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa.
+                    The cohesion is not an input: it is implicit in the
+                    modified Griffith criterion as C = 2|T|.
     
     dx : driving stress orthogonal to the crack wall as an float/int, in Pa.
     Only used if the crack aperture is 0 (a fault), because otherwise it is
@@ -131,8 +133,11 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
     # Defining variables from model_inputs
+    if len(model_inputs)!=5:
+        raise InputError('model_inputs must have 5 values (E, v, density, cfi, T), got '
+                         +str(len(model_inputs))+'. The cohesion is no longer an input: it is implicit as C = 2|T|')
     young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
-    cohesion=model_inputs[3] ; cfi=model_inputs[4] ; tension=model_inputs[5]
+    cfi=model_inputs[3] ; tension=model_inputs[4]
     
     # litho must be a real boolean, not a str
     litho=require_bool(litho,'litho')
@@ -156,10 +161,10 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
        
      # Preparing the model
     if parameter=='ux' or parameter=='uy' or parameter=='uxy' or parameter=='st':
-         current_model=model(xlims,ylims,resolution[0]*2.5,resolution[1]*3,(200),(young),(poisson),(density),(cohesion),(cfi),(tension),g)
+         current_model=model(xlims,ylims,resolution[0]*2.5,resolution[1]*3,(200),(young),(poisson),(density),(cfi),(tension),g)
     
     else:
-        current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cohesion),(cfi),(tension),g)
+        current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cfi),(tension),g)
     
     grid=current_model.grid()
 
@@ -220,9 +225,10 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
-                    cohesion as an float/int in Pa,
                     mu, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa.
+                    The cohesion is not an input: it is implicit in the
+                    modified Griffith criterion as C = 2|T|.
     
     dx : final driving stress orthogonal to the crack wall as an float/int, in Pa.
     Only used if the crack aperture is 0 (a fault), because otherwise it is
@@ -275,8 +281,11 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
     # Defining variables from model_inputs
+    if len(model_inputs)!=5:
+        raise InputError('model_inputs must have 5 values (E, v, density, cfi, T), got '
+                         +str(len(model_inputs))+'. The cohesion is no longer an input: it is implicit as C = 2|T|')
     young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
-    cohesion=model_inputs[3] ; cfi=model_inputs[4] ; tension=model_inputs[5]
+    cfi=model_inputs[3] ; tension=model_inputs[4]
     
     # litho and plotting must be real booleans, not str
     litho=require_bool(litho,'litho')
@@ -294,6 +303,10 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
         dx_final=dx
         
         # EQUATION TO BE CHECKED
+        # Note (Nov 2026): this has the antiplane (mode III) form. For a mode II
+        # crack in plane strain a factor (1-v) is expected, i.e.
+        # dy*b*(1-v)/shear. Left unchanged for now; it only affects the
+        # final slip shown in the legend, not the stresses.
         length_final = dy*b/shear
         length_label = 'u'
 
@@ -317,7 +330,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
         lengths_to_use.append(length_final*percentage)
      
     # Creating the model
-    current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cohesion),(cfi),(tension),g)
+    current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cfi),(tension),g)
     grid=current_model.grid()
     x, y, = grid[0], grid[1]
         

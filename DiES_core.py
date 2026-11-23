@@ -440,7 +440,7 @@ class crack(object):
         return figure
 
 class model(object):
-    def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_c,layers_mu,layers_T, g):
+    def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_mu,layers_T, g):
         """
         Parameters
         --------------
@@ -473,9 +473,6 @@ class model(object):
         layers_d: an array-like object with floats/ints defining the density
         of each of the layers,in kg m-3
         
-        layers_c: an array-like object with floats/ints defining the cohesion
-        of each of the layers,in Pa. NOT USED IN FAILURE CALCULATIONS
-        
         layers_mu: an array-like object with floats/ints defining the coefficient of 
         internal friction of each of the layers, unitless
         
@@ -483,13 +480,20 @@ class model(object):
         tensile stress for each of the layers, in Pa
         
         g: gravitational acceleration in ms-2 for this model.
+        
+        The cohesion of each layer is not an input: it is implicit in the
+        modified Griffith criterion, C = 2|T| (Rivas-Dorado et al., 2023,
+        eq. 12b), and is stored in layers_c for the grid and the labels.
         """
         
         self.x_limits=x_limits ; self.y_limits=y_limits
         self.x_cellsize=x_cellsize ; self.y_cellsize=y_cellsize
         self.y_position_layers=y_position_layers
         self.layers_E=layers_E ; self.layers_v=layers_v ; self.layers_d=layers_d
-        self.layers_c=layers_c ; self.layers_mu=layers_mu; self.layers_T=layers_T
+        self.layers_mu=layers_mu; self.layers_T=layers_T
+        
+        # Cohesion implicit in the modified Griffith criterion: C = 2|T|
+        self.layers_c=2*np.abs(np.asarray(self.layers_T,dtype=float))
         
         # The coulomb angle is defined implicitly after mu for each layer
         self.layers_coula=0.5*np.arctan(1/np.asarray(self.layers_mu,dtype=float))
@@ -554,7 +558,7 @@ class model(object):
         """
         Returns a 3D array where the first two arrays are the 
         X and Y coordinates of the grid, and the rest are the 
-        E, v, density, cohesion, internal friction coeff., Coulomb angle
+        E, v, density, cohesion (2|T|), internal friction coeff., Coulomb angle
         and tensile strength values at each node of the grid.
         """
         

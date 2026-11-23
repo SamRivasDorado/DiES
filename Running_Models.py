@@ -21,7 +21,8 @@ crack_inputs=['crack total aperture','x coordinate of the upper crack tip','y co
 # If the model is of a fault, aperture should be specified to 0.
 # The total height of the crack is calculated from the coordinates of its tips.
 
-model_inputs=['Youngs modulus','poissons ratio','density','cohesion','coefficient of internal friction','tensile strength']
+model_inputs=['Youngs modulus','poissons ratio','density','coefficient of internal friction','tensile strength']
+# The cohesion is not an input: it is implicit in the modified Griffith criterion as C = 2|T|
 
 dx='driving stress orthogonal to the crack, only needed if crack aperture is 0'
 
@@ -67,7 +68,8 @@ crack_inputs=['crack total aperture','x coordinate of the upper crack tip','y co
 # If the model is of a fault, aperture should be specified to 0.
 # The total height of the crack is calculated from the coordinates of its tips.
 
-model_inputs=['Youngs modulus','poissons ratio','density','cohesion','coefficient of internal friction','tensile strength']
+model_inputs=['Youngs modulus','poissons ratio','density','coefficient of internal friction','tensile strength']
+# The cohesion is not an input: it is implicit in the modified Griffith criterion as C = 2|T|
 
 dx='final driving stress orthogonal to the crack, only needed if crack aperture is 0. >0 for a dilatant fault, <0 for a compaction band, 0 for pure shearing'
 
