@@ -1,7 +1,6 @@
 import time
 import sys
 import os
-import cv2
 import gc
 import numpy as np
 from numpy import ma
@@ -15,12 +14,14 @@ from matplotlib.ticker import (MultipleLocator)
 # Obtain the classes from FracnSlip
 from DiES_core import crack
 from DiES_core import model
+from DiES_core import require_bool
 
 # Obtain the function to evaluate the stress state
 from Failure_Determination import evaluate_stress_state
 
 # Obtaining helper functions
 from Helper_functions import create_figure
+from Helper_functions import points_distance
 from Helper_functions import boundaries_contours
 from Helper_functions import true_min_max
 from Helper_functions import downsample_2darray
@@ -49,16 +50,18 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
 
     Parameters
     ----------
-    crack_inputs :   list-like, contains the dike parameters,
-                    crack aperture as a float/int in m, if the model is of a
-                    fault, then aperture should be 0
-                    crack height as a float/int in m,
+    crack_inputs :  list-like, contains the crack parameters,
+                    crack total aperture, as a float/int in m, measured
+                    at the center of the crack between its two walls.
+                    If the model is of a fault, then aperture should be 0,
                     crack upper tip x coordinate,
                     crack upper tip y coodintate,
                     crack lower tip x coordinate,
                     crack lower tip y coodintate,
-                    where these two should be consistent with 
-                    the x and y values used in xlims and ylims
+                    where the coordinates should be consistent with
+                    the x and y values used in xlims and ylims.
+                    The total height of the crack, b, is the distance
+                    between its two tips and is calculated from them.
     model_inputs :  list-like, contains the model parameters for a
                     single-model layer.
                     Young's modulus as a float/int in Pa,
@@ -68,18 +71,19 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
                     mu, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa.
     
-    px : driving stress orthogonal to the crack wall as an float/int, in Pa, 
-    only needs to be non-zero if the model is of a fault. >0 values model
-    a dilatant fault, and <0 values model a compaction band
-    py : driving stress parallel to the crack wall as an float/int, in Pa, where
+    dx : driving stress orthogonal to the crack wall as an float/int, in Pa.
+    Only used if the crack aperture is 0 (a fault), because otherwise it is
+    calculated from the aperture. >0 values model a dilatant fault,
+    and <0 values model a compaction band
+    dy : driving stress parallel to the crack wall as an float/int, in Pa, where
     <0 values are right-lateral motion, and >0 are a left-lateral motion
-    pz : out-of-plane driving stress as an float/int, in Pa, usually 0
+    dz : out-of-plane driving stress as an float/int, in Pa, usually 0
     rx : constant remote stress along the X axis as an float/int, in Pa
     ry : constant remote stress along the Y axis as an float/int, in Pa
     g : gravitational acceleration as a float/int in ms^-2
-    litho : a boolean as a str, 'True' to take into account the lithostatic
-    stresses in the calculations, 'False', to not do it. This has no effect
-    on the displacements.
+    litho : a bool, True to take into account the lithostatic
+    stresses in the calculations, False, to not do it. This has no effect
+    on the displacements. It must be a real boolean, not a str.
     angle : angle at which the resolve the principal stresses, if plotting 'sn'
     or 'ss', as an int/float between 0-90
     
@@ -119,26 +123,36 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     
     
     # Defining variables from crack_inputs
-    a = crack_inputs[0] ; b = crack_inputs[1] ; 
-    upper_crack_tip_x = crack_inputs[2] ;  upper_crack_tip_y = crack_inputs[3]
-    lower_crack_tip_x = crack_inputs[4] ;  lower_crack_tip_y = crack_inputs[5]
+    a = crack_inputs[0] ; 
+    upper_crack_tip_x = crack_inputs[1] ;  upper_crack_tip_y = crack_inputs[2]
+    lower_crack_tip_x = crack_inputs[3] ;  lower_crack_tip_y = crack_inputs[4]
+    
+    # b is the total height of the crack: the distance between its two tips
+    b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
     # Defining variables from model_inputs
     young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
     cohesion=model_inputs[3] ; cfi=model_inputs[4] ; tension=model_inputs[5]
     
-    # Calculating final crack driving stress. This is the value from which the 
-    # pressures to model are calculated using the input pressure range
-    mu = G(model_inputs[0],model_inputs[1])
+    # litho must be a real boolean, not a str
+    litho=require_bool(litho,'litho')
+
+    # shear is the shear modulus, G. It must not be confused with the
+    # coefficient of internal friction, cfi
+    shear = G(model_inputs[0],model_inputs[1])
         
     if a==0:
+        # A fault: the driving stress orthogonal to the crack is an input
         px=dx
         disc=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),dx,dy,dz)
     else:
-        # From Pollard et al., 1986
-        px = a*mu/(2*b*(1-model_inputs[1]))
+        # An opening fracture: the driving stress orthogonal to the crack
+        # follows from its total aperture, a, and its total height, b.
+        # It reproduces the opening profile of crack.mode_I_crack_displacements
+        # (Eq. 7.21 in Pollard and Martel, 2020)
+        px = a*shear/(b*(1-poisson))
         # Creating the crack object
-        disc=crack((upper_crack_tip_x,upper_crack_tip_y),(upper_crack_tip_x,upper_crack_tip_x-b),px,dy,dz)
+        disc=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),px,dy,dz)
        
      # Preparing the model
     if parameter=='ux' or parameter=='uy' or parameter=='uxy' or parameter=='st':
@@ -172,7 +186,7 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     elif parameter=='s3':
         plot=current_model.plot_principal_stresses(disc, 'secondary',rx, ry, litho, 2.5)
     elif parameter=='st':
-        plot=current_model.plot_stress_trajectories(disc,'False', rx, ry,litho)
+        plot=current_model.plot_stress_trajectories(disc,False, rx, ry,litho)
     
     elif parameter=='sn':
         plot=current_model.plot_plane_stresses(disc,'normal',rx,ry,angle,litho,0.5)
@@ -181,20 +195,26 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
    
     return plot
     
-################ A function to run a dynamic model of dike opening ################
+################ A function to run a dynamic model of the opening or slip of a crack ################
 
-def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,folder):
+def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder):
     """
 
     Parameters
     ----------
-    dike_inputs :   list-like, contains the dike parameters,
-                    dike aperture as a float/int in m,
-                    dike height as a float/int in m,
-                    dike upper tip x coordinate,
-                    dike upper tip y coodintate,
-                    where these two should be consistent with 
-                    the x and y values used in xlims and ylims
+    crack_inputs :  list-like, contains the crack parameters,
+                    crack total aperture, as a float/int in m, measured
+                    at the center of the crack between its two walls.
+                    If the model is of a fault, then aperture should be 0,
+                    crack upper tip x coordinate,
+                    crack upper tip y coodintate,
+                    crack lower tip x coordinate,
+                    crack lower tip y coodintate,
+                    where the coordinates should be consistent with
+                    the x and y values used in xlims and ylims.
+                    Values should be negative so the crack is placed in the subsurface.
+                    The total height of the crack, b, is the distance
+                    between its two tips and is calculated from them.
     model_inputs :  list-like, contains the model parameters for a
                     single-model layer.
                     Young's modulus as a float/int in Pa,
@@ -204,82 +224,125 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
                     mu, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa.
     
-    py : driving stress parallel to the dike wall as an float/int, in Pa
-    pz : out-of-plane driving stress as an float/int, in Pa, usually 0
+    dx : final driving stress orthogonal to the crack wall as an float/int, in Pa.
+    Only used if the crack aperture is 0 (a fault), because otherwise it is
+    calculated from the aperture. It can be >0 (a dilatant fault), <0
+    (a compaction band), or 0 (pure shearing).
+    dy : final driving stress parallel to the crack wall as an float/int, in Pa
+    dz : final out-of-plane driving stress as an float/int, in Pa, usually 0
+    All three driving stresses are scaled together with each step of the model,
+    so the values given here are those reached at 100% of the investigation range.
     rx : constant remote stress along the X axis as an float/int, in Pa
     ry : constant remote stress along the Y axis as an float/int, in Pa
     g : gravitational acceleration as a float/int in ms^-2
-    litho: a boolean as a str, 'True' to take into account the lithostatic
-    stresses in the calculations, 'False', to not do it.
-    investigation_range :   list-like, two values between 0-100 between which
-                            the evolution of the dike opening is to be modeled
+    litho: a bool, True to take into account the lithostatic
+    stresses in the calculations, False, to not do it. It must be a real
+    boolean, not a str.
+    investigation_range :   list-like, set of X number of values between 0-1,
+                            between which the evolution of the crack opening
+                            or slip is to be modeled. The number of values in this
+                            parameter will determine the steps of the model
     
     xlims : list-like, X-boundaries of the model
     ylims : list-like, Y-boundaries of the model
     resolution : list-like, two values indicating cell-size along the X and Y axes  
+    plotting : a bool, True to create and save plots of the figures in each step,
+    False, to not do it. It must be a real boolean, not a str.
     downscaling: int, a value to scale up or down the frequency with which
     the discontinuities are plotted. The smaller the cellsize, the larger the 
-    downscaling factor should be.
+    downscaling factor should be. Typical values should be between 1 and 5.
 
     folder : path in which to save the figures, as a str
 
     Returns
     -------
-    None. Saves the figure of each of the modeled steps in the specified
-    folder. Each figure shows a legend indicating dike aperture and
-    driving stress in each step of the model. By default, the figures
-    plot the discontinuities and map the color of the normal stresses
-    found for each discontinuity.
+    current_mode: a 2D array with the failure mode found at each cell of the
+    grid at the last step of the model.
+    If plotting is True, it also saves the figure of each of the modeled
+    steps in the specified folder. Each figure shows a legend indicating
+    the aperture (a) or slip (u), and the driving stresses of each step.
+    By default, the figures plot the discontinuities and map the color of the
+    normal stresses found for each discontinuity.
 
     """    
 
-    # Defining variables from dike_inputs
-    a = dike_inputs[0] ; b = dike_inputs[1] ; 
-    upper_dike_tip_x = dike_inputs[2] ;  upper_dike_tip_y = dike_inputs[3]
+    # Defining variables from crack_inputs
+    a = crack_inputs[0] ; 
+    upper_crack_tip_x = crack_inputs[1] ;  upper_crack_tip_y = crack_inputs[2]
+    lower_crack_tip_x = crack_inputs[3] ;  lower_crack_tip_y = crack_inputs[4]
+    
+    # b is the total height of the crack: the distance between its two tips
+    b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
     # Defining variables from model_inputs
     young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
-    cohesion=model_inputs[3] ; mu=model_inputs[4] ; tension=model_inputs[5]
+    cohesion=model_inputs[3] ; cfi=model_inputs[4] ; tension=model_inputs[5]
     
-    # Calculating final dike driving stress. This is the value from which the 
-    # pressures to model are calculated using the input pressure range
-    mu = G(model_inputs[0],model_inputs[1])
+    # litho and plotting must be real booleans, not str
+    litho=require_bool(litho,'litho')
+    plotting=require_bool(plotting,'plotting')
+
+    # shear is the shear modulus, G. It must not be confused with the
+    # coefficient of internal friction, cfi
+    shear = G(model_inputs[0],model_inputs[1])
+
+    # Final driving stress orthogonal to the crack, and final displacement
+    # of the crack walls, i.e., the values reached at 100% of the model
+    if a==0:
+        # A fault, which may be dilatant (dx>0), a compaction band (dx<0),
+        # or purely shearing (dx=0)
+        dx_final=dx
         
-    # From Pollard et al., 1986
-    dx = a*mu/(2*b*(1-model_inputs[1]))
-    
-    pxs_to_use=[] ; apertures_to_use=[]
+        # EQUATION TO BE CHECKED
+        length_final = dy*b/shear
+        length_label = 'u'
+
+    else:
+        # An opening fracture: the driving stress orthogonal to the crack
+        # follows from its total aperture, a, and its total height, b.
+        # It reproduces the opening profile of crack.mode_I_crack_displacements
+        # (Eq. 7.21 in Pollard and Martel, 2020). The input dx is not used.
+        dx_final = a*shear/(b*(1-poisson))
+        length_final = a
+        length_label = 'a'
+        
+    # All the driving stresses grow together with each step of the model,
+    # each one by the percentage of its step
+    dxs_to_use=[] ; dys_to_use=[] ; dzs_to_use=[] ; lengths_to_use=[]
+
     for percentage in investigation_range:
-        pxs_to_use.append(dx*percentage)
-        apertures_to_use.append(a*percentage)
-            
+        dxs_to_use.append(dx_final*percentage)
+        dys_to_use.append(dy*percentage)
+        dzs_to_use.append(dz*percentage)
+        lengths_to_use.append(length_final*percentage)
+     
     # Creating the model
-    current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cohesion),(mu),(tension),g)
+    current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cohesion),(cfi),(tension),g)
     grid=current_model.grid()
     x, y, = grid[0], grid[1]
-    
+        
     # Initial arrays with 0 vaules for all the main parameters
     prev_sn=np.zeros(np.shape(grid[0])); prev_ss=np.zeros(np.shape(grid[0])) ; prev_above=np.zeros(np.shape(grid[0]))
     prev_angle=np.zeros(np.shape(grid[0])) ; prev_mode=np.zeros(np.shape(grid[0]))
     
-    # Initial arrays for the planes in the left hand side of the dike
+    # Initial arrays for the planes in the left hand side of the crack
     prev_blt=np.zeros(np.shape(grid[0])) ; prev_blu=np.zeros(np.shape(grid[0])) ; prev_blc=np.zeros(np.shape(grid[0])) 
     
-    # Initial arrays for the planes in the right hand side of the dike
+    # Initial arrays for the planes in the right hand side of the crack
     prev_brt=np.zeros(np.shape(grid[0])) ; prev_bru=np.zeros(np.shape(grid[0])) ; prev_brc=np.zeros(np.shape(grid[0]))
     
     prev_betat=np.zeros(np.shape(grid[0]))
     
-    a=0
-    for px, aperture, percentage in zip(pxs_to_use, apertures_to_use, investigation_range):
-        a=a+1
+    step=0
+    for step_dx, step_dy, step_dz, length, percentage in zip(dxs_to_use, dys_to_use, dzs_to_use, lengths_to_use, investigation_range):
+        step=step+1
         
-        # Create the dike at a given pressure
-        dike=crack((upper_dike_tip_x,upper_dike_tip_y),(upper_dike_tip_x,upper_dike_tip_y-b),dx,dy,dz)
-        upper_tip=dike.up_tip() ; dike_center=dike.c() ; lower_tip=dike.low_tip()
+        # Create the crack with the driving stresses of this step
+        disc=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),step_dx,step_dy,step_dz)
+        upper_tip=disc.up_tip() ; crack_center=disc.c() ; lower_tip=disc.low_tip()
         
         # Calculating the principal stresses and the orientation of s1 clockwise relative to the x axis
-        s1, s3, s1a, s3a = current_model.principal_stresses(dike, rx, ry, litho)
+        s1, s3, s1a, s3a = current_model.principal_stresses(disc, rx, ry, litho)
         
         # Now the stress state needs to be evaluated at each point of the grid and the result stored
         # In the first loop, the first results are stored for later use.
@@ -291,21 +354,23 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
         
         current_betat=[]
         
-        for rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,rS,rm,rT,rx in zip (s1,s3,s1a,s3a,prev_sn,prev_ss,prev_angle,prev_mode,prev_above,prev_blt,prev_blu,prev_blc,prev_brt,prev_bru,prev_brc,prev_betat,grid[5],grid[6],grid[8],x):
+        # Running the calculations for each model between the specified investigation ranges
+        
+        for rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,rS,rm,rT,x_row in zip (s1,s3,s1a,s3a,prev_sn,prev_ss,prev_angle,prev_mode,prev_above,prev_blt,prev_blu,prev_blc,prev_brt,prev_bru,prev_brc,prev_betat,grid[5],grid[6],grid[8],x):
     
             mu=rm[0] ; T=rT[0]
     
             row_sn=[] ; row_ss=[] ; row_angle=[] ; row_mode=[] ; row_above=[]
             
-            row_blt=[] ; row_blu=[] ; row_blc=[] #Lists for the beta values in the rows for the left hand side of the dike 
-                                                 #for tension-compression, uniaxial compression, and biaxial compression
-            row_brt=[] ; row_bru=[] ; row_brc=[] #The same but for the right hand side of the dike
+            row_blt=[] ; row_blu=[] ; row_blc=[] #Lists for the beta values in the rows for the left hand side of the crack 
+                                                 #for tension-compression (t), uniaxial compression (u), and biaxial compression (c)
+            row_brt=[] ; row_bru=[] ; row_brc=[] #The same but for the right hand side of the crack
             row_betat=[]
             
             # Now a single list containing all the lists for the rows of the beta values for all planes
-            rows_beta=[row_blt,row_blu,row_blc ,row_brt,row_bru,row_brc, row_betat]
+            rows_beta=[row_blt, row_blu, row_blc ,row_brt, row_bru, row_brc, row_betat]
             
-            for vs1,vs3,vs1a,vs3a,psn,pss,pa,pm,pabove,pblt,pblu,pblc,pbrt,pbru,pbrc,pbt,cx in zip(rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,rx):
+            for vs1,vs3,vs1a,vs3a,psn,pss,pa,pm,pabove,pblt,pblu,pblc,pbrt,pbru,pbrc,pbt,cx in zip(rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,x_row):
                 
                 sn, ss, angle, mode = evaluate_stress_state(vs1,vs3,mu,T,'values')
                 
@@ -314,7 +379,7 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
                 
                 # This ensures that the first tensile or shear failure values 
                 # are preserved at each node for all the following timesteps
-                if pm=='mode I' or pm=='mixed-mode'or pm=='mode II - tension-compression' or pm=='mode II - compression'  or pm=='above':
+                if pm=='Mode I' or pm=='Mixed-mode I-II'or pm=='Mode II - tension-compression' or pm=='Mode II - compression'  or pm=='Above':
                     row_sn.append(psn)
                     row_ss.append(pss)
                     row_angle.append(pa)
@@ -330,12 +395,12 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
                     
                     # This is done to generate to sets of vectors, one for the
                     # shear failure planes, another for the tension failure planes
-                    if mode=='above':
+                    if mode=='Above':
                         row_above.append(0)
                     else:
                         row_above.append(float('NaN'))
                     
-                    if mode=='mode I':
+                    if mode=='Mode I':
                         i=1
                         for row_beta in rows_beta:
                             if i==len(rows_beta):
@@ -348,9 +413,9 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
                     # must be selected from the conjugate planes
                     else:
                         # Identifying where the point is located relative to the
-                        # dike and the sign of the principal stress, which determines
+                        # crack and the sign of the principal stress, which determines
                         # the formula to calculate the angle that should be used
-                        if cx<=dike_center[0]:
+                        if cx<=crack_center[0]:
                             j=0
                             if vs1a>=0:
                                 angle_value=np.deg2rad(vs1a+angle-90)
@@ -359,7 +424,7 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
                                 # angle_value=-np.deg2rad(90+abs(vs1a)-angle)
                                 angle_value=-np.deg2rad(abs(vs1a)-angle+90) #Why? This does not match with my drawings
         
-                        elif cx>dike_center[0]:
+                        elif cx>crack_center[0]:
                             j=3
                             if vs1a>=0:
                                 # angle_value=np.deg2rad(90+vs1a-angle)
@@ -369,13 +434,13 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
                                 angle_value=-np.deg2rad(abs(vs1a)+angle-90)
                         
                         # Identifying the failure mode
-                        if mode=='mixed-mode':
+                        if mode=='Mixed-mode I-II':
                             i=1+j
 
-                        elif mode=='mode II - tension-compression':
+                        elif mode=='Mode II - tension-compression':
                             i=2+j
 
-                        elif mode=='mode II - compression':
+                        elif mode=='Mode II - compression':
                             i=3+j
 
                         else:
@@ -427,72 +492,83 @@ def dynamic_model(dike_inputs,model_inputs,dy,dz,rx,ry,g,litho,investigation_ran
         prev_betat=current_betat
                         
         ############# Plotting #############
-        figure=create_figure(xlims,ylims)
-                
-        ax=figure.axes[0]
-        ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3, label='Dike') 
-        
-        # Plotting stresses
-        plot=ax.pcolormesh(x,y,current_sn,cmap='viridis', vmin=true_min_max(current_sn)[0], 
-                            vmax=true_min_max(current_sn)[1], shading='nearest')  
-        
-        cbar=figure.colorbar(plot,extend='both',format='%.2f')
-        cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
-        cbar.ax.tick_params(labelsize=12)
-        
-        ax.contour(x,y,current_sn, levels=[0], colors='black',linewidths=0.75,linestyles='--')
-        
-        # Plotting the gridcells which are found above failure in each timestep
-        ax.pcolormesh(x,y,current_above,cmap='Reds_r',shading='nearest')  
-        
-        # Plotting downsampled versions of the failure plane orientations
-        ds_brt=downsample_2darray(current_brt,downscaling)
-        ds_bru=downsample_2darray(current_bru,downscaling)
-        ds_brc=downsample_2darray(current_brc,downscaling)
-        ds_blt=downsample_2darray(current_blt,downscaling)
-        ds_blu=downsample_2darray(current_blu,downscaling)
-        ds_blc=downsample_2darray(current_blc,downscaling)
-        ds_betat=downsample_2darray(current_betat,downscaling)
-
-        # Plotting mode-II discs under compression
-        ax.quiver(x,y,np.cos(ds_brc),np.sin(-ds_brc),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')
-        ax.quiver(x,y,np.cos(ds_blc),np.sin(-ds_blc),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')          
-        
-        # Plotting mode-II discs under tension-compression
-        ax.quiver(x,y,np.cos(ds_bru),np.sin(-ds_bru),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')
-        ax.quiver(x,y,np.cos(ds_blu),np.sin(-ds_blu),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')  
-        
-        # Plotting mixed-mode discs
-        ax.quiver(x,y,np.cos(ds_brt),np.sin(-ds_brt),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
-        ax.quiver(x,y,np.cos(ds_blt),np.sin(-ds_blt),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
-                
-        # Plotting mode-I discs
-        ax.quiver(x,y,np.cos(ds_betat),np.sin(-ds_betat),
-                        headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='blue')
-        
-        # plt.legend(loc=3)
-        
-        ax.text(0.97,0.14, 'a·'+str(round(percentage,4))+' = '+str(round(aperture,2))+' m\n'+
-                r'$\sigma_I$·'+str(round(percentage,4))+' = '+str(round(px/1e6,2))+' MPa',
-                bbox=dict(fc='white', ec='black'),
-                horizontalalignment='right', verticalalignment='top',
-                transform=ax.transAxes,fontsize=11, zorder=5)
-                
-        figure.savefig(os.path.join(folder,'sn'+'_'+'_'+str(round(mu,2))+'_'+str(young/1e9)+'_'+str(tension/1e6)+'_'+str(a)+'_'+str(round(px/1e6,2))+'_MPa.png'),dpi=300)
+        if plotting:
+            figure=create_figure(xlims,ylims)
+                    
+            ax=figure.axes[0]
+            ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3, label='Crack') 
             
-        #Deleting useless stuff and and cleaning memory
-        plt.close() 
-        del dike, figure
-        del current_sn, current_ss, current_angle, current_mode, current_above
+            # Plotting stresses
+            plot=ax.pcolormesh(x,y,current_sn,cmap='viridis', vmin=true_min_max(current_sn)[0], 
+                                vmax=true_min_max(current_sn)[1], shading='nearest')  
+            
+            cbar=figure.colorbar(plot,extend='both',format='%.2f')
+            cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
+            cbar.ax.tick_params(labelsize=12)
+            
+            ax.contour(x,y,current_sn, levels=[0], colors='black',linewidths=0.75,linestyles='--')
+            
+            # Plotting the gridcells which are found above failure in each timestep
+            ax.pcolormesh(x,y,current_above,cmap='Reds_r',shading='nearest')  
+            
+            # Plotting downsampled versions of the failure plane orientations
+            ds_brt=downsample_2darray(current_brt,downscaling)
+            ds_bru=downsample_2darray(current_bru,downscaling)
+            ds_brc=downsample_2darray(current_brc,downscaling)
+            ds_blt=downsample_2darray(current_blt,downscaling)
+            ds_blu=downsample_2darray(current_blu,downscaling)
+            ds_blc=downsample_2darray(current_blc,downscaling)
+            ds_betat=downsample_2darray(current_betat,downscaling)
+    
+            # Plotting mode-II discs under compression
+            ax.quiver(x,y,np.cos(ds_brc),np.sin(-ds_brc),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')
+            ax.quiver(x,y,np.cos(ds_blc),np.sin(-ds_blc),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')          
+            
+            # Plotting mode-II discs under tension-compression
+            ax.quiver(x,y,np.cos(ds_bru),np.sin(-ds_bru),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')
+            ax.quiver(x,y,np.cos(ds_blu),np.sin(-ds_blu),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')  
+            
+            # Plotting mixed-mode discs
+            ax.quiver(x,y,np.cos(ds_brt),np.sin(-ds_brt),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
+            ax.quiver(x,y,np.cos(ds_blt),np.sin(-ds_blt),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
+                    
+            # Plotting mode-I discs
+            ax.quiver(x,y,np.cos(ds_betat),np.sin(-ds_betat),
+                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='blue')
+            
+            # plt.legend(loc=3)
+            
+            ax.text(0.97,0.14, length_label+'·'+str(round(percentage,4))+' = '+str(round(length,2))+' m\n'+
+                    r'$\sigma_I$·'+str(round(percentage,4))+' = '+str(round(step_dx/1e6,2))+' MPa\n'+
+                    r'$\sigma_{II}$·'+str(round(percentage,4))+' = '+str(round(step_dy/1e6,2))+' MPa',
+                    bbox=dict(fc='white', ec='black'),
+                    horizontalalignment='right', verticalalignment='top',
+                    transform=ax.transAxes,fontsize=11, zorder=5)
+            
+            # sys.exit()
+            
+            figure.savefig(os.path.join(folder,'sn'+'_'+str(round(shear/1e9,2))+'_'+str(young/1e9)+'_'+str(tension/1e6)+'_'+str(step)+'_'+str(round(step_dx/1e6,2))+'_MPa.png'),dpi=300)
+            
+            #Closing and deleting the figure related info
+            plt.close()
+            del figure
+            del ds_brt, ds_bru, ds_brc, ds_blt, ds_blu, ds_blc, ds_betat
+        
+        
+        # Deleting all previous model calculations to clean memory
+        del disc
+        del current_sn, current_ss, current_angle, current_above
         del current_blt, current_blu, current_blc, current_brt, current_bru, current_brc, current_betat 
-        del ds_brt, ds_bru, ds_brc, ds_blt, ds_blu, ds_blc, ds_betat
+        
         
         gc.collect()
+        
+    return current_mode
      
         ############# End of plotting #############

@@ -710,3 +710,47 @@ def compare_outputs_and_faults(delta,beta,grid,dike,fault1,fault_angle,elevation
     D = (fault_angle)- abs(opt_beta)
 
     return investigation_depth, x_delta, x_fault_value_at_id, max_delta, opt_beta, d, D
+
+
+def point_side_of_line(A, B, P):
+    """
+    Determine which side of a 2D line a point lies on.
+
+    The line is defined by two points A and B. The function computes the sign
+    of the 2D cross product between vectors AB and AP to determine the relative
+    position of point P.
+
+    Parameters
+    ----------
+    A : tuple(float, float)
+        First point defining the line (x, y).
+    B : tuple(float, float)
+        Second point defining the line (x, y).
+    P : tuple(float, float)
+        Point to test (x, y).
+
+    Returns
+    -------
+    int
+        1  : P lies on the left side of the line from A → B
+        -1 : P lies on the right side of the line from A → B
+        0  : P lies exactly on the line
+
+    Notes
+    -----
+    The result depends on the direction of the line (A → B). Reversing the
+    order of A and B will flip the sign of the result.
+    """
+
+    x1, y1 = A
+    x2, y2 = B
+    xp, yp = P
+
+    value = (x2 - x1) * (yp - y1) - (y2 - y1) * (xp - x1)
+
+    if value > 0:
+        return 1
+    elif value < 0:
+        return -1
+    else:
+        return 0

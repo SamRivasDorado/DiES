@@ -13,6 +13,7 @@ from Helper_functions import points_distance
 from Helper_functions import angle_between_lines
 from Helper_functions import linear
 from Helper_functions import boundaries_contours
+from Helper_functions import point_side_of_line
 
 ########################### Defining standard parameters ########################### 
 
@@ -38,37 +39,59 @@ class InputError(Error):
     def __init__(self,message):
         self.message = message
 
+def require_bool(value,name):
+    """
+    Makes sure that an on/off input is a real boolean (True or False).
+    Strings such as 'True' or 'False' are not accepted, because they would
+    silently match no condition in the checks that follow.
+
+    Parameters
+    ---------------
+    value: the input to check,
+    name: a str, the name of the input, used in the error message.
+
+    Returns
+    ---------------
+    The value itself as a bool if it is valid. Otherwise, raises an InputError.
+    """
+
+    if not isinstance(value,(bool,np.bool_)):
+        raise InputError("'"+name+"' must be a boolean, True or False, not "
+                         +type(value).__name__+": "+repr(value)+".")
+
+    return bool(value)
+
 ########################### Functions for the two spatial parameters ###########################
 
-def Rs(upper_tip,dike_center,lower_tip,point):
+def Rs(upper_tip,crack_center,lower_tip,point):
     """
-    Takes the coordinates of the dikes upper and lower tip,
+    Takes the coordinates of the crack's upper and lower tips,
     and the coordinates of the point of interest,
     both as tuples/lists/arrays of two values.
-    At least one of the x coordinates of the dike position
+    At least one of the x coordinates of the crack position
     needs to be a non-zero number, but should be a very close
-    value to 0 to model a vertical dike.
+    value to 0 to model a vertical crack.
     
     Returns the r, r1,r2, and R parameters.
     """
     
-    r=points_distance(dike_center,point)
+    r=points_distance(crack_center,point)
     r1=points_distance(lower_tip, point)
     r2=points_distance(upper_tip,point)
     
     return r,r1,r2,(r1*r2)**0.5
 
-def THETAS(upper_tip,dike_center,lower_tip,point):
+def THETAS(upper_tip,crack_center,lower_tip,point):
     """
-    Takes the coordinates of the dikes upper and lower tip,
-    the coordinates of the dike center,
+    Takes the coordinates of the crack's upper and lower tips,
+    the coordinates of the crack center,
     and the coordinates of the point of interest,
     both as tuples/lists/arrays of two values.
     
     'Returns the theta, theta1, theta2, and THETA parameters, in degrees. 
     """
     
-    theta=angle_between_lines(upper_tip,lower_tip,dike_center,point)
+    theta=angle_between_lines(upper_tip,lower_tip,crack_center,point)
     theta1=angle_between_lines(upper_tip,lower_tip,lower_tip,point)
     theta2=angle_between_lines(upper_tip,lower_tip,upper_tip,point)
     THETA=(theta1+theta2)/2
@@ -77,7 +100,7 @@ def THETAS(upper_tip,dike_center,lower_tip,point):
 
 ########################### Displacement field equations ###########################
 
-def displacements(dpx,dpy,dpz,nu,E,upper_tip,dike_center,lower_tip,point):
+def displacements(dpx,dpy,dpz,nu,E,upper_tip,crack_center,lower_tip,point):
     """
     Parameters
     ---------------
@@ -85,9 +108,9 @@ def displacements(dpx,dpy,dpz,nu,E,upper_tip,dike_center,lower_tip,point):
     dpy = Driving stress acting along the y axis in Pa,
     v = Poissons ratio (unitless),
     E = Youngs Modulus in Pa,
-    upper_tip: the coordinates of the dikes upper tip,
-    dike_center: the coordinates of the dike center,
-    lower_tip: the coordinates of the dikes lower tip,
+    upper_tip: the coordinates of the crack's upper tip,
+    crack_center: the coordinates of the crack center,
+    lower_tip: the coordinates of the crack's lower tip,
     point: the coordinates of the point of interest
     All coordinates are 1D array-like objects of two values. 
      
@@ -100,11 +123,11 @@ def displacements(dpx,dpy,dpz,nu,E,upper_tip,dike_center,lower_tip,point):
     
     # Modifying the investigation point when the investigated x value
     # is at the x coordinates of the tips, to avoid zero-errors
-    # if point[0]==dike_center[0]:
+    # if point[0]==crack_center[0]:
     #     point=(point[0]+0.1,point[-1])
     
-    r=Rs(upper_tip,dike_center,lower_tip,point)
-    t=THETAS(upper_tip,dike_center,lower_tip,point)
+    r=Rs(upper_tip,crack_center,lower_tip,point)
+    t=THETAS(upper_tip,crack_center,lower_tip,point)
     
     t_rad=[]
     for t in t:
@@ -119,11 +142,11 @@ def displacements(dpx,dpy,dpz,nu,E,upper_tip,dike_center,lower_tip,point):
     toward one side of the fracture, and negative traction to the other 
     """
     
-    x=(upper_tip[0],dike_center[0],lower_tip[0])
-    y=(upper_tip[1],dike_center[1],lower_tip[1])
+    x=(upper_tip[0],crack_center[0],lower_tip[0])
+    y=(upper_tip[1],crack_center[1],lower_tip[1])
     
     if upper_tip[0]==lower_tip[0]:
-        if point[0]<dike_center[0]:
+        if point[0]<crack_center[0]:
             dpx=-dpx
     
     else:
@@ -170,7 +193,7 @@ def displacements(dpx,dpy,dpz,nu,E,upper_tip,dike_center,lower_tip,point):
     """
     
     if upper_tip[0]==lower_tip[0]:
-        if point[0]>dike_center[0]:
+        if point[0]>crack_center[0]:
             uy=-uy
             
     else:
@@ -190,7 +213,7 @@ def displacements(dpx,dpy,dpz,nu,E,upper_tip,dike_center,lower_tip,point):
 
 ########################### Traction boundary value problem, stress field equations ###########################
 
-def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_tip,a,point):
+def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,crack_center,lower_tip,a,point):
     """
     Parameters
     ---------------
@@ -205,7 +228,7 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_ti
     
     v: Poissons ratio (unitless),
     E: Youngs Modulus in Pa,
-    the coordinates of the dikes upper and lower tip, and dike center,
+    the coordinates of the crack's upper and lower tips, and crack center,
     a: the fractures half length in m,
     point: A 1D array-like object of two values, 
     the coordinates of the point of interest 
@@ -213,7 +236,8 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_ti
     Return
     ---------------
     The in-plane stresses at the point of interest,
-    syy,sxx,sxy=syx,sxz,syz and szz, all in Pa.
+    sxx, syy, sxy (=syx), sxz, syz, szz and t (the maximum in-plane shear stress),
+    in this order, all in Pa.
     """
 
     """
@@ -221,11 +245,11 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_ti
     is at the x coordinates of the tips, to avoid zero-errors
     """
     
-    if point[0]==dike_center[0]:
-        point=(dike_center[0]+0.1,point[-1])
+    if point[0]==crack_center[0]:
+        point=(crack_center[0]+0.1,point[-1])
         
-    r=Rs(upper_tip,dike_center,lower_tip,point)
-    t=THETAS(upper_tip,dike_center,lower_tip,point)
+    r=Rs(upper_tip,crack_center,lower_tip,point)
+    t=THETAS(upper_tip,crack_center,lower_tip,point)
     
     t_rad=[]
     for t in t:
@@ -237,8 +261,9 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_ti
     left, positive, right, negative.
     """
     
-    if point[0]<dike_center[0]:
-            dpy=-dpy 
+    side = point_side_of_line(upper_tip,lower_tip,point)
+    if side==1:
+        dpy=-dpy 
     
     # Calculating sigma_xx
     first_term=rxx
@@ -259,23 +284,23 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_ti
     # When calculating the shear stresses, driving stress should be negative 
     # when applied to the left side of the fracture
     
-    if first_term==rxy:
-        # if point[0]<dike_center[0]:
-        if point[0]<dike_center[0] and point[1]<dike_center[1]:
-            dpx=-dpx
-            dpy=-dpy
-        elif point[0]<dike_center[0] and point[1]>dike_center[1]:
-            dpx=-dpx   
-            dpy=-dpy
+    # if first_term==rxy:
+    #     # if point[0]<crack_center[0]:
+    #     if point[0]<crack_center[0] and point[1]<crack_center[1]:
+    #         dpx=-dpx
+    #         dpy=-dpy
+    #     elif point[0]<crack_center[0] and point[1]>crack_center[1]:
+    #         dpx=-dpx   
+    #         dpy=-dpy
             
     second_term=((r[0]/r[-1])*np.cos(t_rad[0]-t_rad[-1]))-1-(((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.sin(3*t_rad[-1]))
     third_term=(((a**2)*(r[0]/(r[-1]**3)))*np.sin(t_rad[0])*np.cos(3*t_rad[-1]))
     sxy=first_term+dpy*second_term+dpx*third_term
     
-    # if point[0]<dike_center[0] and point[1]<dike_center[1]:
+    # if point[0]<crack_center[0] and point[1]<crack_center[1]:
     #     sxy=-sxy
     
-    # elif point[0]<dike_center[0] and point[1]>dike_center[1]:
+    # elif point[0]<crack_center[0] and point[1]>crack_center[1]:
     #     sxy=-sxy
     
     # else:
@@ -288,7 +313,7 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,dike_center,lower_ti
     syz=ryz+dpz*((r[0]/r[-1])*np.sin(t_rad[0]-t_rad[-1])-1)
     
     # Calculating sigma_zz
-    szz=nu*(sxx+sxy)
+    szz=nu*(sxx+syy)
     
     # Calculating t, the maximum shear stress
     t=0.5*(((syy-sxx)**2)+4*(sxy**2))**0.5
@@ -449,7 +474,7 @@ class model(object):
         of each of the layers,in kg m-3
         
         layers_c: an array-like object with floats/ints defining the cohesion
-        of each of the layers,in Pa
+        of each of the layers,in Pa. NOT USED IN FAILURE CALCULATIONS
         
         layers_mu: an array-like object with floats/ints defining the coefficient of 
         internal friction of each of the layers, unitless
@@ -682,7 +707,7 @@ class model(object):
         grid=self.grid()
         x, y, Es, vs = grid[0], grid[1], grid[2], grid[3] 
                 
-        upper_tip=crack.up_tip() ; dike_center=crack.c() ; lower_tip=crack.low_tip()
+        upper_tip=crack.up_tip() ; crack_center=crack.c() ; lower_tip=crack.low_tip()
         dpx=crack.x() ; dpy=crack.y() ; dpz=crack.z()
         
         dx=[] ; dy=[] ; dz=[]
@@ -691,7 +716,7 @@ class model(object):
             dx_temp=[] ; dy_temp=[] ; dz_temp=[]
             for i,j,E,v in zip(xrow,yrow,Erow,vrow):
                 point=(i,j)
-                d=displacements(dpx,dpy,dpz,v,E,upper_tip,dike_center,lower_tip,point)
+                d=displacements(dpx,dpy,dpz,v,E,upper_tip,crack_center,lower_tip,point)
                 dx_temp.append(d[0])
                 dy_temp.append(d[1])
                 dz_temp.append(d[2])
@@ -793,9 +818,9 @@ class model(object):
         crack: a crack object,        
         rxx: remote stress normal to plane x
         ryy: remote stress normal to plane y. Both in MPa. Both may be 0.
-        boolean: if True, includes in the calculation the stresses associated 
-        with the lithostatic load at each point of the grid. If, False, it 
-        does not do this.
+        boolean: a bool. If True, includes in the calculation the stresses
+        associated with the lithostatic load at each point of the grid.
+        If False, it does not do this. It must be a real boolean, not a str.
         
         Returns
         ----------
@@ -805,13 +830,13 @@ class model(object):
         sav: average stress 
         sxya: resulting shear stress in the xy plane 
         sxza: resulting shear stress in the xz plane 
-        szza: resulting shear stress in the zz plane 
+        szza: resulting normal stress to the z plane 
         ta: shear stress
         """        
         grid=self.grid()
         x, y, Es, vs= grid[0], grid[1], grid[2], grid[3]
         
-        upper_tip=crack.up_tip() ; dike_center=crack.c() ; lower_tip=crack.low_tip() ; a2=crack.extent()
+        upper_tip=crack.up_tip() ; crack_center=crack.c() ; lower_tip=crack.low_tip() ; a2=crack.extent()
         dpx=crack.x() ; dpy=crack.y() ; dpz=crack.z()
         
         # Following the remote boundary conditions
@@ -819,7 +844,11 @@ class model(object):
         
         sxa=[] ; sya=[] ; sxya=[] ; sxza=[] ; syza=[] ; szza=[] ; ta=[]
           
-        if 'True' in boolean:
+        # A str such as 'True' would match neither branch below and return
+        # empty arrays without any warning, so it is rejected here
+        boolean=require_bool(boolean,'boolean')
+
+        if boolean:
             model_stress=self.stresses_at_depth()
             ryy, rxx= ryy+model_stress[0], rxx+model_stress[1]
             
@@ -827,7 +856,7 @@ class model(object):
                 sx=[] ; sy=[] ; sxy=[] ; sxz=[] ; syz=[] ; szz=[] ; t=[]
                 for i,j,E,v,rx,ry in zip(xrow,yrow,Erow,vrow,rxrow,ryrow):
                     point=(i,j)
-                    d=stresses(dpx,dpy,dpz,rx,ry,rxy,rxz,ryz,v,E,upper_tip,dike_center,lower_tip,a2/2,point)
+                    d=stresses(dpx,dpy,dpz,rx,ry,rxy,rxz,ryz,v,E,upper_tip,crack_center,lower_tip,a2/2,point)
                     sx.append(d[0])
                     sy.append(d[1])
                     sxy.append(d[2])
@@ -844,14 +873,14 @@ class model(object):
                 szza.append(np.asarray(szz))
                 ta.append(np.asarray(t))
                         
-        elif 'False' in boolean:
+        else:
             rxx, ryy, rxy = rxx, ryy, 0
             
             for xrow,yrow,Erow,vrow in zip(x,y,Es,vs):
                 sx=[] ; sy=[] ; sxy=[] ; sxz=[] ; syz=[] ; szz=[] ; t=[]
                 for i,j,E,v in zip(xrow,yrow,Erow,vrow):
                     point=(i,j)
-                    d=stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,v,E,upper_tip,dike_center,lower_tip,a2/2,point)
+                    d=stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,v,E,upper_tip,crack_center,lower_tip,a2/2,point)
                     sx.append(d[0])
                     sy.append(d[1])
                     sxy.append(d[2])
@@ -889,8 +918,8 @@ class model(object):
             'ta', the shear stress on the principal planes
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s22 : array-like, the remote stress acting along the y axis, in Pa,
-        boolean: True, to indicate that the lithostatic stress must be 
-        calculated, False, for the opposite.
+        boolean: a bool. True, to indicate that the lithostatic stress must
+        be calculated, False, for the opposite. Not a str.
         step: int, the contour step
         
         Returns
@@ -980,8 +1009,8 @@ class model(object):
         crack: a crack object,
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s12 : array-like, the remote stress acting along the y axis, in Pa,
-        boolean: True, to indicate that the lithostatic stress must be 
-        calculated, False, for the opposite.
+        boolean: a bool. True, to indicate that the lithostatic stress must
+        be calculated, False, for the opposite. Not a str.
         
         Returns
         -------
@@ -1005,7 +1034,7 @@ class model(object):
         s3=(0.5*(sxx+syy)-(((sxx-syy)*0.5)**2+sxy**2)**0.5)
             
         # Jaeger, 2007
-        # To make sure that when the dike and remote stresses are zero the 
+        # To make sure that when the crack and remote stresses are zero the 
         # stress field is dominated by the vertical lithostatic stress
         if dpx==0 and s11==0:
             s1a=np.full(np.shape(s1),90)
@@ -1041,8 +1070,8 @@ class model(object):
             'angle', for the angle between the vertical and the principal stress,
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
-        boolean: True, to indicate that the lithostatic stress must be 
-        calculated, False, for the opposite.
+        boolean: a bool. True, to indicate that the lithostatic stress must
+        be calculated, False, for the opposite. Not a str.
         step: int, the desired contour interval in MPa
 
         Returns
@@ -1118,12 +1147,12 @@ class model(object):
         Parameters
         ----------
         crack: a crack object,
-        planes: str, if 'True', plots the optimal shear planes defined by mu.
-        If 'False', it does not do this.
+        planes: a bool. If True, plots the optimal shear planes defined by mu.
+        If False, it does not do this. It must be a real boolean, not a str.
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
-        boolean: True, to indicate that the lithostatic stress must be 
-        calculated, False, for the opposite.
+        boolean: a bool. True, to indicate that the lithostatic stress must
+        be calculated, False, for the opposite. Not a str.
 
         Returns
         -------
@@ -1131,6 +1160,9 @@ class model(object):
         optionally the orientation of the optimal shear planes defined by mu.
         
         """
+
+        # Failing early, before the stresses are calculated, if the input is invalid
+        planes=require_bool(planes,'planes')
         
         grid=self.grid()
         x, y = grid[0], grid[1]
@@ -1157,8 +1189,8 @@ class model(object):
         ax.yaxis.set_major_locator(MultipleLocator(500))
         ax.yaxis.set_minor_locator(MultipleLocator(100))
                 
-        plot1=ax.quiver(x,y,np.cos(p_angles),np.sin(-p_angles),p,headlength=0, pivot='middle', scale=0.0030, units='xy', width=30, headwidth=1, cmap='copper_r')
-        plot2=ax.quiver(x,y,np.cos(s_angles),np.sin(-s_angles),s,headlength=0, pivot='middle', scale=0.0045, units='xy', width=30, headwidth=1, cmap='cool')
+        plot1=ax.quiver(x,y,np.cos(p_angles),np.sin(-p_angles),p,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='copper_r')
+        plot2=ax.quiver(x,y,np.cos(s_angles),np.sin(-s_angles),s,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='cool')
         
         # plot1=ax.quiver(x,y,sins,cosins, p, headlength=0, pivot='middle', scale=0.0030, units='xy', width=30, headwidth=1, cmap='copper_r')
         # plot2=ax.quiver(x,y,sins_ortho,cosins_ortho,s,headlength=0, pivot='middle', scale=0.0045, units='xy', width=30, headwidth=1, cmap='cool')
@@ -1171,14 +1203,14 @@ class model(object):
         cbar.set_label(r'$\sigma_3$ (MPa)', rotation=270, labelpad=16, fontsize=14)
         cbar.ax.tick_params(labelsize=12)
         
-        if planes=='True':            
+        if planes:
             # beta are the angles between the two shear planes and the vertical
             beta=p_angles-coula
             beta_p=2*p_angles-beta
             
             # '#FF1493', #3FFF00
-            ax.quiver(x,y,np.cos(beta),np.sin(-beta),headlength=0, pivot='middle', scale=0.0060, units='xy', width=30, headwidth=1, color='#4DAD4B',alpha=0.8)
-            ax.quiver(x,y,np.cos(beta_p),np.sin(-beta_p),headlength=0, pivot='middle', scale=0.0060, units='xy', width=30, headwidth=1, color='#FA422B',alpha=0.8)
+            ax.quiver(x,y,np.cos(beta),np.sin(-beta),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#4DAD4B',alpha=0.8)
+            ax.quiver(x,y,np.cos(beta_p),np.sin(-beta_p),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#FA422B',alpha=0.8)
             
         # ax.legend(loc=1)
         
@@ -1198,8 +1230,8 @@ class model(object):
         crack: a crack object,
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
-        boolean: True, to indicate that the lithostatic stress must be 
-        calculated, False, for the opposite.
+        boolean: a bool. True, to indicate that the lithostatic stress must
+        be calculated, False, for the opposite. Not a str.
 
         Returns
         -------
@@ -1235,8 +1267,8 @@ class model(object):
            'ss': for the shear stress    
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
-        boolean: True, to indicate that the lithostatic stress must be 
-        calculated, False, for the opposite.
+        boolean: a bool. True, to indicate that the lithostatic stress must
+        be calculated, False, for the opposite. Not a str.
 
         Returns
         -------

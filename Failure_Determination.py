@@ -17,22 +17,28 @@ def evaluate_stress_state(p,s,mu,T,output):
     
     Parameters
     ----------
-    s1 : int/float, the maximum compressive stress in Pa
-    s2 : int/float, the minimum compressive stress in Pa
-    S: positive int/float, cohesion in Pa
+    p : int/float, the maximum compressive principal stress in Pa (p > s)
+    s : int/float, the minimum compressive principal stress in Pa
+    mu : int/float, coefficient of internal friction (unitless)
     T : negative int/float, tensile strength in Pa.
-    mu : Coefficient of internal friction
-    output: a str, 'plots' or 'values'
+    output: a str, 'plot' or 'values'
+
+    The cohesion is not an input: the Coulomb envelope is taken to intersect
+    the shear stress axis at 2|T| (the Griffith-Coulomb criterion), so the
+    cohesion is implicitly 2|T|.
 
     Returns
     -------
-    If output = 'plots', returns a Mohr circle plot of the given stress state
+    If output = 'plot', returns a Mohr circle plot of the given stress state
     and the Griffith and Coulomb criteria.
-    If output = 'values', returns a tuple with the normal, shear stress, 
-    failure angle, and a str: 'below' if the circle is below failure, 
-                              'above' if the circle is above failure,
-                              'tension' if the circle is at tensional failure
-                              'shear' if the circle is at shear failure
+    If output = 'values', returns a tuple with the normal stress, shear stress,
+    failure angle (2theta), and the failure mode, as a str:
+        'Below': the circle is below failure
+        'Above': the circle is above failure
+        'Mode I': the circle is at tensional failure
+        'Mode II - tension-compression': shear failure, with sigma_n > 0
+        'Mixed-mode I-II': shear failure, with sigma_n < 0
+        'Mode II - compression': shear failure under compression only
 
     """
     
@@ -86,7 +92,7 @@ def evaluate_stress_state(p,s,mu,T,output):
         
         if x<T:
             i=2
-            sn=float('NaN') ; ss=float('NaN') ; angle=float('NaN') ; mode='above'
+            sn=float('NaN') ; ss=float('NaN') ; angle=float('NaN') ; mode='Above'
             # print ('The circle is above failure')
             # print (sn, ss, angle)
             break
@@ -139,7 +145,7 @@ def evaluate_stress_state(p,s,mu,T,output):
             #  above failure, then it is considered to be past failure
             if k>=10:
                 i=2
-                sn=float('NaN') ; ss=float('NaN') ; angle=float('NaN'); mode='above'
+                sn=float('NaN') ; ss=float('NaN') ; angle=float('NaN'); mode='Above'
                 break
             
             # 2.1.3 ) If all points except the first are below failure, 
@@ -153,7 +159,7 @@ def evaluate_stress_state(p,s,mu,T,output):
                 circle_tangent_params.append((slope_c, intercept_c))
                 parabole_tangent_params.append((slope_p, intercept_p))
                 
-                sn=T ; ss=0 ; angle=180 ; mode='mode I'
+                sn=T ; ss=0 ; angle=180 ; mode='Mode I'
                 
                 break
             
@@ -209,11 +215,11 @@ def evaluate_stress_state(p,s,mu,T,output):
             
                 if s<0 and p>0:
                     if sn>0:
-                        mode='mode II - tension-compression'
+                        mode='Mode II - tension-compression'
                     elif sn<0:
-                        mode='mixed-mode'
+                        mode='Mixed-mode I-II'
                 elif s>0 and p>0:
-                    mode='mode II - compression'
+                    mode='Mode II - compression'
             
     # 3) If no solution has been found so far, then the circle is either
     # above or below the failure lines
@@ -261,13 +267,13 @@ def evaluate_stress_state(p,s,mu,T,output):
         if len(circle_points)==j:
             i=2
             # print ('The circle is below failure')
-            sn=float('NaN') ; ss=float('NaN') ; angle=float('NaN'); mode='below'
+            sn=float('NaN') ; ss=float('NaN') ; angle=float('NaN'); mode='Below'
             
    
         elif k>=1:
             i=2
             # print ('The circle is above failure')
-            sn=float('NaN'); ss=float('NaN') ; angle=float('NaN'); mode='above'
+            sn=float('NaN'); ss=float('NaN') ; angle=float('NaN'); mode='Above'
                     
     if output=='plot':
         # Create some variables for plotting
@@ -285,19 +291,19 @@ def evaluate_stress_state(p,s,mu,T,output):
         ax.vlines(0,y_boundaries[0]*2,y_boundaries[1], color='black',lw=0.5)
         
         # Plotting the Mohr Circle and its defining parameters
-        if mode=='below' or mode=='above':
+        if mode=='Below' or mode=='Above':
             color='black'
         
-        elif mode=='mode II - compression':
+        elif mode=='Mode II - compression':
             color='red'
         
-        elif mode=='mode II - tension-compression':
+        elif mode=='Mode II - tension-compression':
             color='purple'
         
-        elif mode=='mixed-mode':
+        elif mode=='Mixed-mode I-II':
             color='dodgerblue'
             
-        elif mode=='mode I':
+        elif mode=='Mode I':
             color='blue'
         
         ax.plot(circle_points,circle_eq_y(x_center,r,circle_points)[0],lw=3,c=color, zorder=3)
