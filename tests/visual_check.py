@@ -35,10 +35,8 @@ from Modeling_functions import single_model
 # Material: E (Pa), v, density (kg m-3), cfi, T (Pa). Cohesion is implicit, C = 2|T|
 # Values of the example model in Rivas-Dorado et al. (2023, JSG 167, 104778). With v = 0.25
 # and cfi = 0.57 the lithostatic state alone does not reach failure (with cfi >= 0.6 it does).
-# T is passed as a positive magnitude: evaluate_stress_state only places the Griffith-Coulomb
-# envelope correctly (vertex at -|T|, intercept 2|T|) when T > 0, although its docstring says
-# negative. Pending confirmation of the convention (roadmap, Phase 0).
-MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, 1.5e6]
+# T is negative: tension is negative on the Mohr diagram.
+MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, -1.5e6]
 G_MARS = 3.71
 XLIMS = [-5000, 5000]
 YLIMS = [-6000, -10]

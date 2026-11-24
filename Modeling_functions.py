@@ -19,6 +19,7 @@ from DiES_core import InputError
 
 # Obtain the function to evaluate the stress state
 from Failure_Determination import evaluate_stress_state
+from Failure_Determination import failure_plane_orientation
 
 # Obtaining helper functions
 from Helper_functions import create_figure
@@ -69,7 +70,8 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
                     mu, the coefficient of internal friction, as an float/int,
-                    tension, tensile strength as an float/int in Pa.
+                    tension, tensile strength as an float/int in Pa, negative
+                    (tension is negative on the Mohr diagram), e.g. -1.5e6.
                     The cohesion is not an input: it is implicit in the
                     modified Griffith criterion as C = 2|T|.
     
@@ -228,7 +230,8 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
                     mu, the coefficient of internal friction, as an float/int,
-                    tension, tensile strength as an float/int in Pa.
+                    tension, tensile strength as an float/int in Pa, negative
+                    (tension is negative on the Mohr diagram), e.g. -1.5e6.
                     The cohesion is not an input: it is implicit in the
                     modified Griffith criterion as C = 2|T|.
     
@@ -359,7 +362,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
         disc=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),step_dx,step_dy,step_dz)
         upper_tip=disc.up_tip() ; crack_center=disc.c() ; lower_tip=disc.low_tip()
         
-        # Calculating the principal stresses and the orientation of s1 clockwise relative to the x axis
+        # Calculating the principal stresses and the orientation of s1, counterclockwise from the x axis
         s1, s3, s1a, s3a = current_model.principal_stresses(disc, rx, ry, litho)
         
         # Now the stress state needs to be evaluated at each point of the grid and the result stored
@@ -422,7 +425,8 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                         i=1
                         for row_beta in rows_beta:
                             if i==len(rows_beta):
-                                row_beta.append(np.deg2rad(angle+vs1a-90))
+                                # Mode I plane: contains sigma1
+                                row_beta.append(failure_plane_orientation(vs1a,angle,mode,0))
                             else:
                                 row_beta.append(float('NaN'))
                             i=i+1    
@@ -433,23 +437,14 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                         # Identifying where the point is located relative to the
                         # crack and the sign of the principal stress, which determines
                         # the formula to calculate the angle that should be used
+                        # The conjugate plane that dips towards the crack is selected
+                        # (failure_plane_orientation). j offsets the left/right arrays.
                         if cx<=crack_center[0]:
-                            j=0
-                            if vs1a>=0:
-                                angle_value=np.deg2rad(vs1a+angle-90)
-                                                              
-                            elif vs1a<0:
-                                # angle_value=-np.deg2rad(90+abs(vs1a)-angle)
-                                angle_value=-np.deg2rad(abs(vs1a)-angle+90) #Why? This does not match with my drawings
-        
-                        elif cx>crack_center[0]:
-                            j=3
-                            if vs1a>=0:
-                                # angle_value=np.deg2rad(90+vs1a-angle)
-                                angle_value=np.deg2rad(vs1a-angle+90) #Why? As above
-                                
-                            elif vs1a<0:
-                                angle_value=-np.deg2rad(abs(vs1a)+angle-90)
+                            j=0 ; side=-1
+                        else:
+                            j=3 ; side=1
+                        
+                        angle_value=failure_plane_orientation(vs1a,angle,mode,side)
                         
                         # Identifying the failure mode
                         if mode=='Mixed-mode I-II':
@@ -538,26 +533,28 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
             ds_blc=downsample_2darray(current_blc,downscaling)
             ds_betat=downsample_2darray(current_betat,downscaling)
     
+            # Plane traces at orientation b (counterclockwise from +x) are drawn as
+            # (cos b, sin b). Until Nov 2026 they were drawn mirrored, as (cos b, -sin b).
             # Plotting mode-II discs under compression
-            ax.quiver(x,y,np.cos(ds_brc),np.sin(-ds_brc),
+            ax.quiver(x,y,np.cos(ds_brc),np.sin(ds_brc),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')
-            ax.quiver(x,y,np.cos(ds_blc),np.sin(-ds_blc),
+            ax.quiver(x,y,np.cos(ds_blc),np.sin(ds_blc),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')          
             
             # Plotting mode-II discs under tension-compression
-            ax.quiver(x,y,np.cos(ds_bru),np.sin(-ds_bru),
+            ax.quiver(x,y,np.cos(ds_bru),np.sin(ds_bru),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')
-            ax.quiver(x,y,np.cos(ds_blu),np.sin(-ds_blu),
+            ax.quiver(x,y,np.cos(ds_blu),np.sin(ds_blu),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')  
             
             # Plotting mixed-mode discs
-            ax.quiver(x,y,np.cos(ds_brt),np.sin(-ds_brt),
+            ax.quiver(x,y,np.cos(ds_brt),np.sin(ds_brt),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
-            ax.quiver(x,y,np.cos(ds_blt),np.sin(-ds_blt),
+            ax.quiver(x,y,np.cos(ds_blt),np.sin(ds_blt),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
                     
             # Plotting mode-I discs
-            ax.quiver(x,y,np.cos(ds_betat),np.sin(-ds_betat),
+            ax.quiver(x,y,np.cos(ds_betat),np.sin(ds_betat),
                             headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='blue')
             
             # plt.legend(loc=3)

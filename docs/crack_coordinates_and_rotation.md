@@ -240,9 +240,9 @@ with complex potentials (Westergaard, 1939) instead of tripolar coordinates.
 - *Vertical cracks in mode I* (the dikes of Rivas-Dorado et al., 2023): displacements, `sxx` and
   `syy` were already correct. `sxy` had the wrong sign at x > 0, which does not change σ1, σ3 or the
   failure modes (they depend on `sxy²`). This was checked on a dike with lithostatic stresses:
-  σ1, σ3 and the failure modes of `dynamic_model` are identical. The principal orientations
-  (`s1a`, `s3a`) at x > 0 were mirrored, and so were the stress trajectories and failure-plane
-  angles derived from them on that side.
+  σ1, σ3 and the failure modes of `dynamic_model` are identical. The value of `s1a`, `s3a`
+  changed sign at x > 0; how the orientations were computed and drawn, and their own errors, are
+  described in Section 10.
 - *Vertical cracks in mode II*: the displacements were right; `sxx` and `syy` had the wrong sign
   and `sxy` was wrong on one side.
 - *Inclined cracks*: displacements and stresses were wrong (errors of 20–200 %). For example, a
@@ -258,6 +258,130 @@ with complex potentials (Westergaard, 1939) instead of tripolar coordinates.
   evaluated in one call. The result is identical to evaluating point by point (differences
   ~1e-16, from rounding).
 
+## 10. Principal stress orientations and failure planes
+
+The stresses of Sections 5–7 feed the principal stresses, their orientations and, through them,
+the orientations of the failure planes that `dynamic_model` predicts. This section documents how
+those orientations are computed and drawn since November 2026, and what was wrong before.
+
+### 10.1 Convention
+
+All orientations in the X–Y section are angles **counterclockwise from the +x axis**, given modulo
+180° (a line at `a` and at `a + 180°` is the same line) and reported in (−90°, 90°]. A line with
+orientation `a` has the direction `(cos a, sin a)`; that is how every orientation is drawn
+(`quiver(x, y, cos a, sin a)`). 90° is vertical. The principal stresses use the
+compression-positive convention: `σ1` is the maximum compressive stress.
+
+### 10.2 Orientation of σ1 and σ3 — `model.principal_stresses`
+
+With `σxx`, `σyy`, `σxy` compression positive, the direction of `σ1` satisfies
+`tan 2a = 2σxy / (σxx − σyy)` (Jaeger et al., 2007). `tan 2a` alone does not tell `σ1` from `σ3`,
+because it has two solutions 90° apart. The two-argument arctangent picks the right one from the
+signs of `σxy` and `σxx − σyy`:
+
+```
+s1a = ½ · atan2(2σxy, σxx − σyy)        (degrees, in (−90°, 90°])
+s3a = s1a − 90°  if s1a > 0,  s1a + 90°  otherwise
+```
+
+Checks: with `σxy = 0` and `σxx > σyy` (horizontal σ1), `atan2(0, +) = 0` gives 0°; with `σxy = 0`
+and `σxx < σyy` (vertical σ1, e.g. the lithostatic state) `atan2(0, −) = 180°` gives 90°. There is
+no division, so no special case is needed.
+
+**What was wrong before.**
+
+- **(a)** The angle was `arctan(2σxy / ((σxx − σyy) + R))`, with `R = ((σxx − σyy)² + 4σxy²)^0.5`.
+  Where `σxy = 0` and `σxx < σyy` the denominator is 0. It was replaced by 0.001, which gave
+  `arctan(0) = 0` (horizontal) instead of 90° (vertical): a 90° error, for example along the whole
+  row through the center of a vertical dike.
+- **(b)** The whole grid was forced to `s1a = 90°` when `dpx == 0 and s11 == 0`. This was meant for
+  "no crack and no remote stress", but it also caught faults loaded only in shear (`dpx = 0`,
+  `dpy ≠ 0`), whose effect on the orientations was then ignored (errors up to ~87° next to the fault).
+- **(c)** The orientations were drawn as `(cos a, −sin a)`, i.e. mirrored about the horizontal.
+- **(d)** Combined with the old sign error of `σxy` at x > 0 (Section 4), (c) cancelled out on the
+  right of a vertical crack, so x > 0 was drawn correctly and x < 0 was mirrored (up to ~18° near the
+  dike, 95th percentile). After the core was corrected (Section 4), both sides were mirrored until
+  (a)–(c) were fixed.
+
+The new orientations match the eigenvectors of the stress tensor to ~1e−6° everywhere.
+
+### 10.3 Optimal shear planes — `plot_stress_trajectories(planes=True)`
+
+The two conjugate optimal planes lie at `±coula` from σ1, where `coula = ½·arctan(1/μ)` is the angle
+between σ1 and the planes (`θ_opt = 90° − coula`). Their orientations are `s1a − coula` and
+`s1a + coula`, drawn as `(cos, sin)`.
+
+### 10.4 Failure planes in `dynamic_model` — `failure_plane_orientation`
+
+At each node, `evaluate_stress_state` returns the failure mode and `2θ`, the angle on the Mohr
+circle from the σ1 point to the point of failure. `θ` is the angle between σ1 and the **normal** to
+the failure plane, so the plane itself lies at `δ = 90° − θ` from σ1.
+`failure_plane_orientation(s1a, θ, mode, side)` in `Failure_Determination.py` returns its orientation:
+
+- **Mode I** (`2θ = 180°`, `θ = 90°`): the plane contains σ1, `b = s1a + θ − 90° = s1a`.
+- **Shear modes** (`'Mixed-mode I-II'`, `'Mode II - tension-compression'`,
+  `'Mode II - compression'`): there are two conjugate planes, `s1a + δ` and `s1a − δ`. As in the
+  original code, the one that **dips towards the crack** is kept. On the left of the crack
+  (x ≤ x of its center) that is the plane dipping towards +x; on the right, the one dipping towards
+  −x. Above a dike these are the graben-forming normal faults.
+  - A trace with orientation `b` (modulo 180°) dips towards +x when `90° < b < 180°`, i.e. when
+    `sin 2b < 0`, and towards −x when `sin 2b > 0`. The candidate with the most negative `sin 2b`
+    (left) or the most positive (right) is selected.
+  - If σ1 is so tilted that both conjugates dip the same way (possible next to an inclined fault),
+    this picks the one closest to dipping towards the crack.
+- `'Below'`, `'Above'` or `θ = NaN`: no plane (`NaN`).
+
+The traces are drawn as `(cos b, sin b)`.
+
+**What was wrong before.** The original code used four hand-tuned branches, depending on the side
+of the crack and on the sign of `s1a`:
+
+```
+left,  s1a ≥ 0:  b = s1a + θ − 90                 right, s1a ≥ 0:  b = s1a − θ + 90
+left,  s1a < 0:  b = −(|s1a| − θ + 90)            right, s1a < 0:  b = −(|s1a| + θ − 90)
+```
+
+With `s1a = −|s1a|` these reduce to `b = s1a − δ` (left) and `b = s1a + δ` (right), whatever the
+sign of `s1a`. Drawn as `(cos b, −sin b)`, they gave the right plane only where σ1 was exactly
+vertical: the mirror leaves a vertical σ1 unchanged and swaps the two conjugates. Elsewhere the
+error was twice the tilt of σ1, which explains the comments `#Why? This does not match with my
+drawings` in the original code.
+
+### 10.5 Verification
+
+`tests/test_orientations_and_failure.py`:
+
+1. `s1a` and `s3a` match the eigenvectors of the stress tensor (largest and smallest eigenvalue)
+   to 1e−4° for a vertical dike and for faults dipping towards +x and towards −x, and lie in
+   (−90°, 90°].
+2. In the lithostatic state alone, σ1 is vertical (`s1a = 90°`) everywhere.
+3. Rules of `failure_plane_orientation`: with σ1 vertical and `θ = 60°` it gives 120° on the left
+   and 60° on the right; in Mode I it gives `s1a`; for `'Below'`/`'Above'` it gives `NaN`.
+4. **Independent check of the failure planes:** for every node in shear failure, the full stress
+   tensor is resolved on the selected plane (normal `(−sin b, cos b)`). The normal and shear
+   stresses obtained match the tangent point `(σn, τ)` returned by `evaluate_stress_state` to
+   0.02 MPa. Of the two conjugates, the selected one is the closest to dipping towards the crack.
+   A mirrored or wrongly selected plane fails this test. In Mode I the difference can reach a few
+   % of T, which is the 5 % tolerance with which `evaluate_stress_state` detects tensile tangency.
+5. The sign of T (Section 11).
+
+## 11. Sign of the tensile strength T
+
+The Mohr diagram uses the compression-positive convention, so tension plots on the negative side
+of the normal-stress axis and the tensile strength **T is always negative** (e.g. −1.5 MPa). In
+`evaluate_stress_state`, the Griffith parabola `τ² = 4|T|(σn − T)` has its vertex at `σn = T`, and
+the Coulomb line `τ = μσn − 2T` intersects the shear-stress axis at `−2T = 2|T|`, the cohesion
+(C = 2|T|, Rivas-Dorado et al., 2023, eq. 12b).
+
+**What was wrong before.** The function converted the inputs with `T = (−T)/1e6`, which turned
+T positive. The rest of the function (`x < T` for points beyond the tensile strength, the parabola
+vertex at `T`, the intercept `−2T`) is written for a negative T, so the envelope ended up in
+compression. Most stable states were classified as `'Above'`: for example, the lithostatic state at
+300 m (σ1 = 3.2, σ3 = 1.1 MPa) with T = −1.5 MPa, or σ3 = −1.4 MPa with |T| = 1.5 MPa. This was
+independent of the size of the pressure steps of `dynamic_model`, and it was already present in
+`main`. The conversion is now `T = T/1e6`, and a positive T raises `InputError`. With T negative,
+the results are identical to those the old code gave with the same |T| passed as positive.
+
 ## References
 
 - Pollard, D. D., and Segall, P. (1987). Theoretical displacements and stresses near fractures in
@@ -265,6 +389,8 @@ with complex potentials (Westergaard, 1939) instead of tripolar coordinates.
   B. K. (ed.), *Fracture Mechanics of Rock*, Academic Press, 277–349.
 - Pollard, D. D., and Martel, S. J. (2020). *Structural Geology: A Quantitative Introduction*.
   Cambridge University Press.
+- Jaeger, J. C., Cook, N. G. W., and Zimmerman, R. W. (2007). *Fundamentals of Rock Mechanics*,
+  4th ed. Blackwell.
 - Westergaard, H. M. (1939). Bearing pressures and cracks. *Journal of Applied Mechanics*, 6, A49–A53.
 - Rivas-Dorado, S., Ruíz, J., and Romeo, I. (2023). Modeling of dike-induced graben nucleation in the
   Elysium region, Mars: The role of planetary gravity. *Journal of Structural Geology*, 167, 104778.

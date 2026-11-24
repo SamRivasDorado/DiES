@@ -550,8 +550,9 @@ class model(object):
         layers_mu: an array-like object with floats/ints defining the coefficient of 
         internal friction of each of the layers, unitless
         
-        layers_T: an array-like object with floats/ints defining the max
-        tensile stress for each of the layers, in Pa
+        layers_T: an array-like object with floats/ints defining the tensile
+        strength of each of the layers, in Pa. Negative, because tension is
+        negative on the Mohr diagram (e.g. -1.5e6).
         
         g: gravitational acceleration in ms-2 for this model.
         
@@ -1088,44 +1089,41 @@ class model(object):
         All 2D arrays with values in Pa:
         s1: maximum compressive stress at each point of the grid, in Pa
         s3: minimum compressive stress at each point of the grid, in Pa
-        new_s1a: float, angle from the x axis,
-        to the s1 principal plane, in degrees
-        new_s3a: float, angle from the x axis,
-        to the s3 principal plane, in degrees
-        """
+        s1a: orientation of the sigma1 direction, in degrees, measured
+        counterclockwise from the +x axis, in (-90, 90]. 90 is vertical.
+        s3a: orientation of the sigma3 direction, in degrees, measured in the
+        same way: s1a +/- 90, in (-90, 90].
+        A direction at angle a is the unit vector (cos a, sin a); a and a+180
+        are the same line, so the orientations are given modulo 180.
         
-        dpx=crack.x() ; dpy=crack.y()
+        See docs/crack_coordinates_and_rotation.md, Section 10.
+        """
         
         s=self.model_stresses(crack, s11, s22, boolean)
         
+        # Compression positive
         sxx=-s[0] ; syy=-s[1] ; sxy=-s[3]
                                 
         s1=(0.5*(sxx+syy)+(((sxx-syy)*0.5)**2+sxy**2)**0.5)
         s3=(0.5*(sxx+syy)-(((sxx-syy)*0.5)**2+sxy**2)**0.5)
-            
-        # Jaeger, 2007
-        # To make sure that when the crack and remote stresses are zero the 
-        # stress field is dominated by the vertical lithostatic stress
-        if dpx==0 and s11==0:
-            s1a=np.full(np.shape(s1),90)
-            s3a=np.full(np.shape(s3),0)
         
-        else:
-            # This is relative to the y axis
-            # s1a=np.degrees(np.arctan(2*sxy/(sxx-syy)))/2
-            # s3a=s1a+90
-            
-            # This is relative to the x axis
-            s1a_lower_term=(sxx-syy)+(4*(sxy**2)+(sxx-syy)**2)**0.5
-            s3a_lower_term=(sxx-syy)-(4*(sxy**2)+(sxx-syy)**2)**0.5
-
-            # Making sure there are no-zero division errors
-            s1a_lower_term=np.where(s1a_lower_term==0, 0.001, s1a_lower_term)
-            s3a_lower_term=np.where(s3a_lower_term==0, 0.001, s3a_lower_term)
-            
-            s1a=np.degrees(np.arctan(2*sxy/s1a_lower_term))
-            s3a=np.degrees(np.arctan(2*sxy/s3a_lower_term))
-                
+        # Orientation of sigma1 (Jaeger et al., 2007): tan(2a) = 2sxy/(sxx-syy).
+        # arctan2 picks the quadrant of 2a from the signs of sxy and sxx-syy,
+        # so a is the direction of the MAXIMUM compressive stress, in (-90, 90],
+        # with no division by zero. For example, with sxy = 0 and sxx < syy
+        # (vertical sigma1, as in the lithostatic state) it gives 90.
+        #
+        # Until Nov 2026 the angle was arctan(2sxy/((sxx-syy)+R)), where the
+        # denominator was replaced by 0.001 when it was 0: that returned 0
+        # (horizontal) instead of 90 wherever sigma1 was vertical and sxy = 0.
+        # The whole grid was also forced to 90 when dpx = 0 and s11 = 0, which
+        # ignored faults loaded only in shear.
+        s1a=np.degrees(0.5*np.arctan2(2*sxy,sxx-syy))
+        s1a=np.where(s1a<=-90,s1a+180,s1a)
+        
+        # sigma3 is normal to sigma1, also in (-90, 90]
+        s3a=np.where(s1a>0,s1a-90,s1a+90)
+        
         return s1, s3, s1a, s3a
     
     def plot_principal_stresses(self, crack, stress, s11, s22, boolean, step):
@@ -1137,7 +1135,8 @@ class model(object):
         stress: str, specifies the stress to be plotted, 
             'principal' for the maximum compressive stress, 
             'secondary', for the minimum compressive stress,
-            'angle', for the angle between the vertical and the principal stress,
+            'angle', for the orientation of sigma1, in degrees counterclockwise
+            from the +x axis, in (-90, 90] (90 = vertical, see principal_stresses),
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
         boolean: a bool. True, to indicate that the lithostatic stress must
@@ -1147,7 +1146,7 @@ class model(object):
         Returns
         -------
         A figure object plotting the desired principal stress in MPa, or the
-        2theta angle in degrees
+        angle of sigma1 in degrees
 
         """
         grid=self.grid()
@@ -1184,7 +1183,7 @@ class model(object):
         elif stress=='angle':
             soi=self.principal_stresses(crack,s11,s22,boolean)[2]
             soi=soi ; plot_params=boundaries_contours(soi, step)
-            label=r'$\theta$ (°)'
+            label=r'$\sigma_1$ angle from +x (°)'
         
         plot=ax.pcolormesh(x,y,soi,cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
             
@@ -1259,8 +1258,10 @@ class model(object):
         ax.yaxis.set_major_locator(MultipleLocator(500))
         ax.yaxis.set_minor_locator(MultipleLocator(100))
                 
-        plot1=ax.quiver(x,y,np.cos(p_angles),np.sin(-p_angles),p,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='copper_r')
-        plot2=ax.quiver(x,y,np.cos(s_angles),np.sin(-s_angles),s,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='cool')
+        # Orientations are counterclockwise from +x: a direction at angle a is (cos a, sin a).
+        # Until Nov 2026 they were drawn as (cos a, -sin a), i.e. mirrored about the horizontal.
+        plot1=ax.quiver(x,y,np.cos(p_angles),np.sin(p_angles),p,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='copper_r')
+        plot2=ax.quiver(x,y,np.cos(s_angles),np.sin(s_angles),s,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='cool')
         
         # plot1=ax.quiver(x,y,sins,cosins, p, headlength=0, pivot='middle', scale=0.0030, units='xy', width=30, headwidth=1, cmap='copper_r')
         # plot2=ax.quiver(x,y,sins_ortho,cosins_ortho,s,headlength=0, pivot='middle', scale=0.0045, units='xy', width=30, headwidth=1, cmap='cool')
@@ -1274,13 +1275,15 @@ class model(object):
         cbar.ax.tick_params(labelsize=12)
         
         if planes:
-            # beta are the angles between the two shear planes and the vertical
+            # The two conjugate optimal shear planes lie at +/- coula from sigma1,
+            # coula = 0.5*arctan(1/mu) being the angle between sigma1 and the planes.
+            # beta and beta_p are their orientations, counterclockwise from +x
             beta=p_angles-coula
             beta_p=2*p_angles-beta
             
             # '#FF1493', #3FFF00
-            ax.quiver(x,y,np.cos(beta),np.sin(-beta),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#4DAD4B',alpha=0.8)
-            ax.quiver(x,y,np.cos(beta_p),np.sin(-beta_p),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#FA422B',alpha=0.8)
+            ax.quiver(x,y,np.cos(beta),np.sin(beta),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#4DAD4B',alpha=0.8)
+            ax.quiver(x,y,np.cos(beta_p),np.sin(beta_p),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#FA422B',alpha=0.8)
             
         # ax.legend(loc=1)
         

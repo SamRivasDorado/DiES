@@ -12,6 +12,9 @@ from Helper_functions import circle_eq_y
 from Helper_functions import points_distance
 from Helper_functions import angle_between_lines
 
+# Error class shared with the core
+from DiES_core import InputError
+
 def evaluate_stress_state(p,s,mu,T,output):
     """
     
@@ -20,7 +23,11 @@ def evaluate_stress_state(p,s,mu,T,output):
     p : int/float, the maximum compressive principal stress in Pa (p > s)
     s : int/float, the minimum compressive principal stress in Pa
     mu : int/float, coefficient of internal friction (unitless)
-    T : negative int/float, tensile strength in Pa.
+    T : negative int/float, tensile strength in Pa. The Mohr diagram uses the
+        compression-positive convention, so tension plots on the negative
+        side of the normal-stress axis and T must always be < 0 (e.g. -1.5e6).
+        The Griffith parabola has its vertex at sigma_n = T and the Coulomb
+        line intersects the shear-stress axis at -2T = 2|T| (the cohesion).
     output: a str, 'plot' or 'values'
 
     The cohesion is not an input: the Coulomb envelope is taken to intersect
@@ -57,8 +64,16 @@ def evaluate_stress_state(p,s,mu,T,output):
     #     print ('This algorithm is not suited to evaluate this scenario.')
     #     print ('Please revise your values and try again.')
     
-    # Redefining the inputs tp MPa, and T as a tensional value
-    p=p/1e6 ; s=s/1e6 ; T=(-T)/1e6
+    # T must be negative: it is the tensile strength on the compression-positive
+    # normal-stress axis of the Mohr diagram
+    if not T<0:
+        raise InputError('T must be negative (tension is negative on the Mohr diagram), got '+str(T)+' Pa')
+    
+    # Redefining the inputs to MPa. T keeps its sign: everything below
+    # (x<T, the parabola vertex at T, the Coulomb intercept -2T) is written for T<0.
+    # Before Nov 2026 this line was T=(-T)/1e6, which flipped the envelope into
+    # compression and classified most stable states as 'Above'.
+    p=p/1e6 ; s=s/1e6 ; T=T/1e6
     
     # Mohr circle radius # Mohr circle x coordinate
     r = abs(p - s)/2 ; x_center = p-(p-s)/2
@@ -351,3 +366,64 @@ def evaluate_stress_state(p,s,mu,T,output):
         
     elif output=='values':
         return sn, ss, angle, mode
+
+
+def failure_plane_orientation(s1a,theta,mode,side):
+    """
+    Orientation of the failure plane formed at a point, in the 2D section.
+    
+    Parameters
+    ----------
+    s1a : float, orientation of sigma1 in degrees, counterclockwise from the
+          +x axis (as returned by model.principal_stresses), modulo 180.
+    theta : float, in degrees, half of the 2theta angle returned by
+          evaluate_stress_state: the angle between sigma1 and the NORMAL to the
+          failure plane. The plane itself is at delta = 90 - theta from sigma1.
+    mode : str, the failure mode returned by evaluate_stress_state.
+    side : -1 if the point is on the left of the crack (x <= x of its center),
+           +1 if it is on the right.
+    
+    Returns
+    -------
+    The orientation of the failure plane in radians, counterclockwise from +x
+    (the plane trace is the direction (cos b, sin b)), or NaN if there is no
+    failure plane (modes 'Below' and 'Above', or theta = NaN).
+    
+    - Mode I: the plane contains sigma1 (theta = 90), so b = s1a + theta - 90 = s1a.
+    - Shear modes ('Mixed-mode I-II', 'Mode II - tension-compression',
+      'Mode II - compression'): there are two conjugate planes, at s1a + delta
+      and s1a - delta. The one that dips towards the crack is selected, as in
+      the original code: on the left of the crack the plane dipping towards +x,
+      on the right the plane dipping towards -x. Above a dike these are the
+      graben-forming normal faults.
+      A plane trace at orientation b (modulo 180) dips towards +x when
+      90 < b < 180, i.e. when sin(2b) < 0, and towards -x when sin(2b) > 0;
+      the candidate with the most negative (left) or most positive (right)
+      sin(2b) is chosen, which also works when sigma1 is far from vertical.
+      If sigma1 is tilted so much that both conjugates dip the same way
+      (e.g. next to an inclined fault), the one closest to dipping towards
+      the crack (the steeper one, on that side) is chosen.
+    
+    Until Nov 2026 this was done with four hand-tuned branches depending on the
+    side and on the sign of s1a, which reduce to b = s1a - delta (left) and
+    b = s1a + delta (right), and the traces were drawn as (cos b, -sin b). That
+    gave the right plane only where sigma1 was exactly vertical; elsewhere the
+    error was twice the tilt of sigma1. See docs/crack_coordinates_and_rotation.md,
+    Section 10.
+    """
+    if not np.isfinite(theta) or mode in ('Below','Above'):
+        return float('NaN')
+    
+    if mode=='Mode I':
+        return np.deg2rad(s1a+theta-90)
+    
+    delta=90-theta
+    candidates=(s1a+delta, s1a-delta)
+    dip_sense=[np.sin(np.deg2rad(2*c)) for c in candidates]
+    
+    if side<0:
+        chosen=candidates[int(np.argmin(dip_sense))]
+    else:
+        chosen=candidates[int(np.argmax(dip_sense))]
+    
+    return np.deg2rad(chosen)
