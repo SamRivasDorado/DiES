@@ -39,6 +39,7 @@ for folder in (ROOT, os.path.dirname(os.path.abspath(__file__))):
 from DiES_core import model, crack
 from Helper_functions import G, points_distance
 from Modeling_functions import dynamic_model
+import plotting
 from visual_check import CASES, MODEL_INPUTS, G_MARS, XLIMS, YLIMS, RESOLUTION
 
 warnings.filterwarnings('ignore')
@@ -58,21 +59,28 @@ def build(name):
 
 
 def figures(name, litho, rx, ry, angle):
-    """Yields (label, figure) for every static figure of one case."""
+    """
+    Yields (label, figure) for every static figure of one case. Since Phase 1
+    (Nov 2026) each grid is computed once (model.compute) and every figure is
+    drawn from those results with plotting.py; the figures are identical to
+    those of the model.plot_* methods.
+    """
     title, disc, m, mv = build(name)
+    res = m.compute(disc, rx, ry, litho)        # fine grid: contours and scalar fields
+    res_v = mv.compute(disc, rx, ry, litho)     # coarse grid: vectors and trajectories
     for comp in ('ux', 'uy', 'uxy'):
-        yield 'plot_displacement ' + comp + ', vectors', mv.plot_displacement(disc, comp, 'vectors', 0.25)
-        yield 'plot_displacement ' + comp + ', contours', m.plot_displacement(disc, comp, 'contours', 0.1)
+        yield 'plot_displacement ' + comp + ', vectors', plotting.plot_displacement(res_v, comp, 'vectors', 0.25)
+        yield 'plot_displacement ' + comp + ', contours', plotting.plot_displacement(res, comp, 'contours', 0.1)
     for stress, step in (('sxa', 2.5), ('sya', 5), ('sav', 5), ('sxya', 1), ('sxza', 1), ('sza', 5), ('ta', 1)):
-        yield 'plot_stresses ' + stress, m.plot_stresses(disc, stress, rx, ry, litho, step)
+        yield 'plot_stresses ' + stress, plotting.plot_stresses(res, stress, step)
     for stress, step in (('principal', 5), ('secondary', 2.5), ('angle', 10)):
-        yield 'plot_principal_stresses ' + stress, m.plot_principal_stresses(disc, stress, rx, ry, litho, step)
+        yield 'plot_principal_stresses ' + stress, plotting.plot_principal_stresses(res, stress, step)
     for planes in (False, True):
-        yield 'plot_stress_trajectories, planes=' + str(planes), mv.plot_stress_trajectories(disc, planes, rx, ry, litho)
+        yield 'plot_stress_trajectories, planes=' + str(planes), plotting.plot_stress_trajectories(res_v, planes)
     for stress in ('normal', 'shear'):
         yield 'plot_plane_stresses ' + stress + ', planes at ' + str(angle) + '°', \
-              m.plot_plane_stresses(disc, stress, rx, ry, angle, litho, 0.5)
-    yield 'crack.plot_mode_I_crack_displacements', disc.plot_mode_I_crack_displacements(MODEL_INPUTS[1], MODEL_INPUTS[0])
+              plotting.plot_plane_stresses(res, stress, angle, 0.5)
+    yield 'crack.plot_mode_I_crack_displacements', plotting.plot_crack_opening(disc, MODEL_INPUTS[1], MODEL_INPUTS[0])
 
 
 def final_driving_stress(name):

@@ -13,8 +13,9 @@ from Helper_functions import points_distance
 from Helper_functions import linear
 from Helper_functions import boundaries_contours
 
-# Container of the computed fields (Phase 1, Nov 2026)
+# Container of the computed fields and figures drawn from it (Phase 1, Nov 2026)
 from results import DiESResults
+import plotting
 
 ########################### Defining standard parameters ########################### 
 
@@ -569,23 +570,9 @@ class crack(object):
         
         Returns the figure plotting said displacements.
         """
-        
-        disps=self.mode_I_crack_displacements(v,E)
-        h=self.extent()
-        length=np.linspace(-h/2,h/2,50)
-        
-        figure=plt.figure(figsize=(7,4))
-        ax=figure.add_subplot(111, xlabel='y distance from crack center (m)', ylabel=r'u$_i$ (m)')
-        
-        ax.plot(length,disps[0],c='purple',ls='--',lw=2,label=r'u$_x$, x>0')
-        ax.plot(length,disps[1],c='purple',ls=':',lw=2,label=r'u$_x$, x<0')
-        ax.scatter(length,disps[2],c='peru',facecolor='white',alpha=0.5,edgecolor='black',marker='o',s=40,label=r'u$_y$, x>0')
-        ax.scatter(length,disps[3],c='brown',marker='o',s=5,label=r'u$_y$, x<0')
-        
-        ax.legend(title=r'$\sigma_e$ = '+str(self.dpx/1E6)+' MPa\nv ='+str(v)+'\nE = '+str(E/1E9)
-                  +' GPa\na = '+str(round(h/2/1E3,2))+' km',bbox_to_anchor=(1,1))
+        # Since Nov 2026 the figure is drawn by plotting.plot_crack_opening
+        return plotting.plot_crack_opening(self,v,E)
 
-        return figure
 
 class model(object):
     def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_cfi,layers_T, g):
@@ -947,76 +934,11 @@ class model(object):
         ----------
         A figure object plotting the desired displacement
         """
-        
-        grid=self.grid()
-        
-        upper_tip , lower_tip = crack.up_tip(), crack.low_tip()
-        
-        displacements=self.model_displacements(crack)
-        dx, dy= displacements[0] , displacements[1]
-        x, y = grid[0], grid[1]
-              
-        figure=plt.figure(figsize=(6,6),tight_layout=True)
-        ax=figure.add_subplot(111, xlim=self.x_limits,ylim=self.y_limits)
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.tick_params(labelsize=12, axis='both')
-        
-        ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3, label='Crack')
-        
-        if displacement=='ux':
-            dp=dx ; ds=0 ; dt=dx ; plot_params=boundaries_contours(dp, step) ; label=r'u$_x$ (m)'
-            
-        elif displacement=='uy':
-            dp=0 ; ds=dy ; dt=dy ; plot_params=boundaries_contours(ds, step) ; label=r'u$_y$ (m)'
-            
-        elif displacement=='uxy':
-            # Magnitude of the in-plane displacement vector
-            dp=dx ; ds=dy ; dt=np.hypot(dx,dy) ; plot_params=boundaries_contours(dt, step) ; label=r'|u$_{xy}$| (m)'
-        
-        else:
-            raise InputError('Invalid displacement. Input "ux", "uy", or "uxy" instead.')
-            
-        if option=='vectors':
-            # The arrows are scaled with the largest magnitude of the plotted vector
-            # (|ux|, |uy| or |u|, depending on the selected displacement)
-            plot=ax.quiver(x,y,dp,ds,dt, width=0.0050, scale=np.nanmax(np.hypot(dp,ds))/0.1, cmap='viridis')
-            cbar=figure.colorbar(plot,extend='both')
-            cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
-            cbar.ax.tick_params(labelsize=12)
+        # Since Nov 2026 (Phase 1): computed once, drawn by plotting.plot_displacement
+        res=self.compute(crack, displacements=True, stresses=False)
+        return plotting.plot_displacement(res, displacement, option, step)
 
-            
-        elif option=='contours':
-            
-            plot=ax.pcolormesh(x,y,dt,cmap='viridis',vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
-            cbar=figure.colorbar(plot,extend='both')
-            cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
-            cbar.ax.tick_params(labelsize=12)
-            
-            contours=ax.contour(x,y,dt, levels=plot_params[-1], colors='black',linewidths=0.75,linestyles='--')
-        
-            if step<=0.001:
-                ax.clabel(contours,fmt='%1.4f')
-            elif step<0.01:
-                ax.clabel(contours,fmt='%1.3f')
-            elif 0.01<=step<0.1:
-                ax.clabel(contours,fmt='%1.2f')
-            elif step==0.1:
-                ax.clabel(contours,fmt='%1.1f')
-            elif step>=0.1:
-                ax.clabel(contours,fmt='%1.1f')
-        else:
-            raise InputError('Invalid option. Input "vectors" or "contours" instead.')
-                
-        ax.text(0.97,0.10,r'$\sigma_I$ = '+str(round(crack.x()/1E6,2))
-                +' MPa\n'+r'$\sigma_{II}$ = '+str(round(crack.y()/1E6,2))+' MPa',
-                bbox=dict(fc='white', ec='black'),
-                horizontalalignment='right', verticalalignment='top',
-                transform=ax.transAxes,fontsize=11, zorder=5)
-        
-        return figure
-        
-        
+
     def model_stresses(self, crack, rxx, ryy, boolean):
         """
         Parameters
@@ -1132,81 +1054,14 @@ class model(object):
         ----------
         A figure object plotting the desired stress in MPa
         """
-        
-        grid=self.grid()
-        x, y, = grid[0], grid[1]
-        
-        upper_tip=crack.up_tip() ; lower_tip=crack.low_tip()
-        dpx=crack.x() ; dpy=crack.y()
-        
-        # soi=stress of interest
-        if stress=='sxa':
-            soi=self.model_stresses(crack,s11,s22,boolean)[0]
-            label=r'$\sigma_{xx}$ (MPa)'
-            
-        elif stress=='sya':
-            soi=self.model_stresses(crack,s11,s22,boolean)[1]
-            label=r'$\sigma_{yy}$ (MPa)'
-            
-        elif stress=='sav':
-            soi=self.model_stresses(crack,s11,s22,boolean)[2]
-            label=r'$\sigma_{av}$ (MPa)'
-            
-        elif stress=='sxya':
-            soi=self.model_stresses(crack,s11,s22,boolean)[3]
-            label=r'$\sigma_{xy}$ (MPa)'
-            
-        elif stress=='sxza':
-            soi=self.model_stresses(crack,s11,s22,boolean)[4]
-            label=r'$\sigma_{xz}$ (MPa)'
-            
-        elif stress=='sza':
-            soi=self.model_stresses(crack,s11,s22,boolean)[5]
-            label=r'$\sigma_{zz}$ (MPa)'
-            
-        elif stress=='ta':
-            soi=self.model_stresses(crack,s11,s22,boolean)[6]
-            label=r'$\tau$ (MPa)'
-              
-        figure=plt.figure(figsize=(6,6),tight_layout=True)
-        ax=figure.add_subplot(111, xlim=self.x_limits, ylim=self.y_limits)
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.tick_params(labelsize=12, axis='both')
-        
-        ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3)
-        
-        soi=soi/1e6
-        
-        plot_params=boundaries_contours(soi, step)
+        # Since Nov 2026 (Phase 1): computed once, drawn by plotting.plot_stresses.
+        # An invalid key is rejected before computing (it used to raise UnboundLocalError)
+        if stress not in plotting.STRESS_KEYS:
+            raise InputError('Invalid stress "'+str(stress)+'". Input one of '+', '.join(sorted(plotting.STRESS_KEYS)))
+        res=self.compute(crack, s11, s22, boolean, displacements=False)
+        return plotting.plot_stresses(res, stress, step)
 
-        plot=ax.pcolormesh(x,y,soi,cmap='viridis',vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
-        
-        ax.grid(which='both',alpha=0.5)
-                    
-        cbar=figure.colorbar(plot,extend='both')
-        cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
-        cbar.ax.tick_params(labelsize=12)
-        
-        contours=ax.contour(x,y,soi, levels=plot_params[-1], colors='black',linewidths=0.75,linestyles='--')
-        
-        if step<=0.001:
-            ax.clabel(contours,fmt='%1.4f')
-        elif step<0.01:
-            ax.clabel(contours,fmt='%1.3f')
-        elif 0.01<=step<=1:
-            ax.clabel(contours,fmt='%1.2f')
-        elif step>=1:
-            ax.clabel(contours,fmt='%1.1f')
 
-        # ax.text(0.97,0.09,r'$\sigma_I$ = '+str(round(dpx/1E6,2))
-        #         +' MPa\n'+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa', 
-        #         bbox=dict(fc='white', ec='black'),
-        #         horizontalalignment='right', verticalalignment='top',
-        #         transform=ax.transAxes,fontsize=11, zorder=5)
-        
-        return figure
-    
     def principal_stresses(self, crack, s11, s22, boolean):
         """
 
@@ -1262,67 +1117,14 @@ class model(object):
         angle of sigma1 in degrees
 
         """
-        grid=self.grid()
-        x, y = grid[0], grid[1]
-        
-        upper_tip=crack.up_tip() ; lower_tip=crack.low_tip()
-        dpx=crack.x() ; dpy=crack.y()
-        
-        ps=self.principal_stresses(crack,s11,s22,boolean)    
-        p=ps[0] ; s=ps[1] ; angles=ps[-1]
-        
-        figure=plt.figure(figsize=(6,6),tight_layout=True)
-        ax=figure.add_subplot(111, xlim=self.x_limits, ylim=self.y_limits)
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.tick_params(labelsize=12, axis='both')
-        ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3)        
-        
-        ax.xaxis.set_major_locator(MultipleLocator(1000))
-        ax.xaxis.set_minor_locator(MultipleLocator(100))
-        ax.yaxis.set_major_locator(MultipleLocator(500))
-        ax.yaxis.set_minor_locator(MultipleLocator(100))
-        
-        if stress=='principal':
-            soi=self.principal_stresses(crack,s11,s22,boolean)[0]
-            soi=soi/1e6 ; plot_params=boundaries_contours(soi, step)
-            label=r'$\sigma_1$ (MPa)'
-            
-        elif stress=='secondary':
-            soi=self.principal_stresses(crack,s11,s22,boolean)[1]
-            soi=soi/1e6 ; plot_params=boundaries_contours(soi, step)
-            label=r'$\sigma_3$ (MPa)'
-            
-        elif stress=='angle':
-            soi=self.principal_stresses(crack,s11,s22,boolean)[2]
-            soi=soi ; plot_params=boundaries_contours(soi, step)
-            label=r'$\sigma_1$ angle from +x (°)'
-        
-        plot=ax.pcolormesh(x,y,soi,cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
-            
-        cbar=figure.colorbar(plot,extend='both')
-        cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
-        cbar.ax.tick_params(labelsize=12)
-        
-        contours=ax.contour(x,y,soi, levels=plot_params[-1], colors='black',linewidths=0.75,linestyles='--')
-        
-        if step<=0.001:
-            ax.clabel(contours,fmt='%1.4f')
-        elif step<0.01:
-            ax.clabel(contours,fmt='%1.3f')
-        elif 0.01<=step<=1:
-            ax.clabel(contours,fmt='%1.2f')
-        elif step>=1:
-            ax.clabel(contours,fmt='%1.1f')
-        
-        # ax.text(0.97,0.09,r'$\sigma_I$ = '+str(round(dpx/1E6,2))
-        #         +' MPa\n'+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa', 
-        #         bbox=dict(fc='white', ec='black'),
-        #         horizontalalignment='right', verticalalignment='top',
-        #         transform=ax.transAxes,fontsize=11, zorder=5)
-        
-        return figure
-    
+        # Since Nov 2026 (Phase 1): computed once (it used to call
+        # principal_stresses up to three times), drawn by plotting.plot_principal_stresses
+        if stress not in ('principal','secondary','angle'):
+            raise InputError('Invalid stress. Input "principal", "secondary" or "angle" instead.')
+        res=self.compute(crack, s11, s22, boolean, displacements=False)
+        return plotting.plot_principal_stresses(res, stress, step)
+
+
     def plot_stress_trajectories(self, crack, planes,  s11, s22, boolean):
         """
 
@@ -1342,73 +1144,14 @@ class model(object):
         optionally the orientation of the optimal shear planes defined by cfi.
         
         """
-
         # Failing early, before the stresses are calculated, if the input is invalid
         planes=require_bool(planes,'planes')
         
-        grid=self.grid()
-        x, y = grid[0], grid[1]
-        s, cfi, coula = grid[5], grid[6], grid[7]
-        
-        upper_tip=crack.up_tip() ; lower_tip=crack.low_tip()
-        dpx=crack.x() ; dpy=crack.y()
-        
-        ps=self.principal_stresses(crack,s11,s22,boolean)    
-        p=ps[0]/1e6 ; s=ps[1]/1e6 ; p_angle=ps[2] ; s_angle=ps[-1]
-          
-        p_angles=np.deg2rad(p_angle)
-        s_angles=np.deg2rad(s_angle)
-                
-        figure=plt.figure(figsize=(7,6),tight_layout=True)
-        ax=figure.add_subplot(111, xlim=self.x_limits, ylim=self.y_limits)
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.tick_params(labelsize=12, axis='both')
-        ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3)        
-        
-        ax.xaxis.set_major_locator(MultipleLocator(1000))
-        ax.xaxis.set_minor_locator(MultipleLocator(100))
-        ax.yaxis.set_major_locator(MultipleLocator(500))
-        ax.yaxis.set_minor_locator(MultipleLocator(100))
-                
-        # Orientations are counterclockwise from +x: a direction at angle a is (cos a, sin a).
-        # Until Nov 2026 they were drawn as (cos a, -sin a), i.e. mirrored about the horizontal.
-        plot1=ax.quiver(x,y,np.cos(p_angles),np.sin(p_angles),p,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='copper_r')
-        plot2=ax.quiver(x,y,np.cos(s_angles),np.sin(s_angles),s,headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, cmap='cool')
-        
-        # plot1=ax.quiver(x,y,sins,cosins, p, headlength=0, pivot='middle', scale=0.0030, units='xy', width=30, headwidth=1, cmap='copper_r')
-        # plot2=ax.quiver(x,y,sins_ortho,cosins_ortho,s,headlength=0, pivot='middle', scale=0.0045, units='xy', width=30, headwidth=1, cmap='cool')
-        
-        cbar=figure.colorbar(plot1,extend='both',shrink=0.60, aspect=30, pad=0.05)
-        cbar.set_label(r'$\sigma_1$ (MPa)', rotation=270, labelpad=12, fontsize=14)
-        cbar.ax.tick_params(labelsize=12)
-        
-        cbar=figure.colorbar(plot2,extend='both',shrink=0.60, aspect=30)
-        cbar.set_label(r'$\sigma_3$ (MPa)', rotation=270, labelpad=16, fontsize=14)
-        cbar.ax.tick_params(labelsize=12)
-        
-        if planes:
-            # The two conjugate optimal shear planes lie at +/- coula from sigma1,
-            # coula = 0.5*arctan(1/mu) being the angle between sigma1 and the planes.
-            # beta and beta_p are their orientations, counterclockwise from +x
-            beta=p_angles-coula
-            beta_p=2*p_angles-beta
-            
-            # '#FF1493', #3FFF00
-            ax.quiver(x,y,np.cos(beta),np.sin(beta),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#4DAD4B',alpha=0.8)
-            ax.quiver(x,y,np.cos(beta_p),np.sin(beta_p),headlength=0, pivot='middle', scale=0.0090, units='xy', width=10, headwidth=1, color='#FA422B',alpha=0.8)
-            
-        # ax.legend(loc=1)
-        
-        # ax.text(0.96,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa; '+r'$\sigma{^r_x}$ = '+str(round(s11/1e6,0))+' MPa\n'
-        #         +r'$\alpha$ = '+str(angle)+'°; '+r'$\rho$ = '+str(self.layers_d)+' kg m$^{-3}$\n'
-        #         +r"$\mu'$ = "+str(self.layers_cfi)+'; '+r'$\theta_{opt}$ = '+str(np.round(90-np.degrees(self.layers_coula),2))+'°',
-        #         bbox=dict(fc='white', ec='black'),
-        #         horizontalalignment='right', verticalalignment='top',
-        #         transform=ax.transAxes,fontsize=11, zorder=5)
-        
-        return figure
-        
+        # Since Nov 2026 (Phase 1): computed once, drawn by plotting.plot_stress_trajectories
+        res=self.compute(crack, s11, s22, boolean, displacements=False)
+        return plotting.plot_stress_trajectories(res, planes)
+
+
     def plane_stresses(self, crack, s11, s22, boolean):
         """
         Parameters
@@ -1456,68 +1199,9 @@ class model(object):
         -------
         A figure plotting the desired stress in MPa    
         """
-        
-        grid=self.grid()
-        x, y = grid[0], grid[1]
-        s, cfi, coula = grid[5], grid[6], grid[7]
-        
-        upper_tip=crack.up_tip() ; lower_tip=crack.low_tip()
-        dpx=crack.x() ; dpy=crack.y()
-                
-        if stress=='normal':
-            soi=self.plane_stresses(crack, s11, s22, boolean)[0]
-            soi=soi/1e6 ; plot_params=boundaries_contours(soi, step)
-            label=r'$\sigma_n$ (MPa)'
-            
-        elif stress=='shear':
-            soi=self.plane_stresses(crack, s11, s22, boolean)[1]
-            soi=soi/1e6 ; plot_params=boundaries_contours(soi, step)
-            label=r'$\sigma_s$ (MPa)'
-                            
-        figure=plt.figure(figsize=(6,6),tight_layout=True)
-        ax=figure.add_subplot(111, xlim=self.x_limits, ylim=self.y_limits)
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.tick_params(labelsize=12, axis='both')
-        ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3)        
-        
-        ax.xaxis.set_major_locator(MultipleLocator(1000))
-        ax.xaxis.set_minor_locator(MultipleLocator(100))
-        ax.yaxis.set_major_locator(MultipleLocator(500))
-        ax.yaxis.set_minor_locator(MultipleLocator(100))
-        
-        plot=ax.pcolormesh(x,y,soi,cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
-            
-        cbar=figure.colorbar(plot,extend='both')
-        cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
-        cbar.ax.tick_params(labelsize=12)
-        
-        contours=ax.contour(x,y,soi, levels=plot_params[-1], colors='black',linewidths=0.75,linestyles='--')
-        
-        if step<=0.001:
-            ax.clabel(contours,fmt='%1.4f')
-        elif step<0.01:
-            ax.clabel(contours,fmt='%1.3f')
-        elif 0.01<=step<=1:
-            ax.clabel(contours,fmt='%1.2f')
-        elif step>=1:
-            ax.clabel(contours,fmt='%1.1f')
-        
-        if self.n_layers()==1:
-            ax.text(0.97,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa ; '+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa\n'
-                    +r'$\alpha$ = '+str(angle)+'° ; '+ r'$\rho$ = '+str(self.layer_values(self.layers_d,'layers_d')[0])+' kg m$^3$'
-                    +'\nC = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa ; '+r"$\mu'$ = "+str(self.layer_values(self.layers_cfi,'layers_cfi')[0])+'; '
-                    +r'$\theta_{opt}$ = '+str(round(90-np.degrees(self.layer_values(self.layers_coula,'layers_coula')[0]),2))+'°',
-                    bbox=dict(fc='white', ec='black'),
-                    horizontalalignment='right', verticalalignment='top',
-                    transform=ax.transAxes,fontsize=11, zorder=5)
-        else:
-            ax.text(0.98,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa\n'+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa\n'
-                    +r'$\alpha$ = '+str(angle)+'°'
-                    +'\nC = '+str(np.asarray(self.layers_c,dtype=float)/1e6)+' MPa ; '+r"$\mu'$ = "+str(np.asarray(self.layers_cfi,dtype=float))+'; '
-                    +r'$\theta_{opt}$ = '+str(np.round(90-np.degrees(self.layers_coula),2))+'°',
-                    bbox=dict(fc='white', ec='black'),
-                    horizontalalignment='right', verticalalignment='top',
-                    transform=ax.transAxes,fontsize=11, zorder=5)
-                
-        return figure
+        # Since Nov 2026 (Phase 1): computed once (it used to call plane_stresses
+        # twice), drawn by plotting.plot_plane_stresses
+        if stress not in ('normal','shear'):
+            raise InputError('Invalid stress. Input "normal" or "shear" instead.')
+        res=self.compute(crack, s11, s22, boolean, displacements=False)
+        return plotting.plot_plane_stresses(res, stress, angle, step)
