@@ -38,7 +38,7 @@ for folder in (ROOT, os.path.dirname(os.path.abspath(__file__))):
 
 from DiES_core import model, crack
 from Helper_functions import G, points_distance
-from Modeling_functions import dynamic_model
+from Modeling_functions import compute_dynamic_model
 import plotting
 from visual_check import CASES, MODEL_INPUTS, G_MARS, XLIMS, YLIMS, RESOLUTION
 
@@ -100,20 +100,30 @@ def investigation_range(name, step_mpa):
 
 def dynamic_figures(name, litho, rx, ry, folder, steps, show_every):
     """
-    Runs dynamic_model with plotting=True and returns the figures of every
-    show_every-th step (and of the last one), sorted by step.
+    Computes the dynamic model (compute_dynamic_model) and saves, at 300 dpi,
+    the figures of every show_every-th step and of the last one, with the
+    same file names as dynamic_model(plotting=True). Since Phase 1 (Nov 2026)
+    only the steps shown are drawn. Returns the paths, sorted by step.
     """
     title, ci, dx, dy, dz = CASES[name]
     os.makedirs(folder, exist_ok=True)
     for old in glob.glob(os.path.join(folder, '*.png')):
         os.remove(old)
-    dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, rx, ry, G_MARS, litho, steps,
-                  XLIMS, YLIMS, RESOLUTION, 2, True, folder)
-    plt.close('all')
-    # Files are named ..._<step>_<dx>_MPa.png; sort by step
-    paths = sorted(glob.glob(os.path.join(folder, '*.png')),
-                   key=lambda p: float(os.path.basename(p).split('_')[-3]))
-    return [p for k, p in enumerate(paths, start=1) if k % show_every == 0 or k == len(paths)]
+    results = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, rx, ry, G_MARS, litho, steps,
+                                    XLIMS, YLIMS, RESOLUTION)
+    E, nu, T = MODEL_INPUTS[0], MODEL_INPUTS[1], MODEL_INPUTS[4]
+    paths = []
+    for k, step in enumerate(results, start=1):
+        if k % show_every and k != len(results):
+            continue
+        meta = step.metadata
+        path = os.path.join(folder, 'sn_' + str(round(G(E, nu)/1e9, 2)) + '_' + str(E/1e9) + '_' + str(T/1e6) + '_'
+                            + str(meta['step']) + '_' + str(round(meta['dx']/1e6, 2)) + '_MPa.png')
+        figure = plotting.plot_dynamic_step(step, 2)
+        figure.savefig(path, dpi=300)
+        plt.close(figure)
+        paths.append(path)
+    return paths
 
 
 def main(argv=None):

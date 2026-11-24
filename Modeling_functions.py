@@ -17,6 +17,11 @@ from DiES_core import model
 from DiES_core import require_bool
 from DiES_core import InputError
 
+# Results containers and figures (Phase 1, Nov 2026). The figures module is
+# imported as dies_plotting because dynamic_model has an argument called plotting
+from results import DiESResults, DynamicResults
+import plotting as dies_plotting
+
 # Obtain the function to evaluate the stress state
 from Failure_Determination import evaluate_stress_state
 from Failure_Determination import failure_plane_orientation
@@ -206,78 +211,22 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     
 ################ A function to run a dynamic model of the opening or slip of a crack ################
 
-def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder):
+def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution):
     """
-
-    Parameters
-    ----------
-    crack_inputs :  list-like, contains the crack parameters,
-                    crack total aperture, as a float/int in m, measured
-                    at the center of the crack between its two walls.
-                    If the model is of a fault, then aperture should be 0,
-                    crack upper tip x coordinate,
-                    crack upper tip y coodintate,
-                    crack lower tip x coordinate,
-                    crack lower tip y coodintate,
-                    where the coordinates should be consistent with
-                    the x and y values used in xlims and ylims.
-                    Values should be negative so the crack is placed in the subsurface.
-                    The total height of the crack, b, is the distance
-                    between its two tips and is calculated from them.
-    model_inputs :  list-like, contains the model parameters for a
-                    single-model layer.
-                    Young's modulus as a float/int in Pa,
-                    Poissons ratio as an float/int between 0-0.5,
-                    density as an float/int in kgm^3,
-                    cfi, the coefficient of internal friction, as an float/int,
-                    tension, tensile strength as an float/int in Pa, negative
-                    (tension is negative on the Mohr diagram), e.g. -1.5e6.
-                    The cohesion is not an input: it is implicit in the
-                    modified Griffith criterion as C = 2|T|.
+    Computes the dynamic model step by step, without drawing (Phase 1, Nov 2026).
     
-    dx : final driving stress orthogonal to the crack wall as an float/int, in Pa.
-    Only used if the crack aperture is 0 (a fault), because otherwise it is
-    calculated from the aperture. It can be >0 (a dilatant fault), <0
-    (a compaction band), or 0 (pure shearing).
-    dy : final driving stress parallel to the crack wall as an float/int, in Pa.
-    >0 values make the hanging wall slide down-dip (normal sense) and <0
-    values up-dip (reverse sense). For a vertical crack, >0 makes the block
-    at x > 0 move down. See docs/crack_coordinates_and_rotation.md
-    dz : final out-of-plane driving stress as an float/int, in Pa, usually 0
-    All three driving stresses are scaled together with each step of the model,
-    so the values given here are those reached at 100% of the investigation range.
-    rx : constant remote stress along the X axis as an float/int, in Pa
-    ry : constant remote stress along the Y axis as an float/int, in Pa
-    g : gravitational acceleration as a float/int in ms^-2
-    litho: a bool, True to take into account the lithostatic
-    stresses in the calculations, False, to not do it. It must be a real
-    boolean, not a str.
-    investigation_range :   list-like, set of X number of values between 0-1,
-                            between which the evolution of the crack opening
-                            or slip is to be modeled. The number of values in this
-                            parameter will determine the steps of the model
+    Same inputs as dynamic_model, without downscaling, plotting and folder.
+    The driving stresses grow with investigation_range; at each step the stress
+    state of every node is evaluated with evaluate_stress_state, and the first
+    failure found at a node is kept in all the following steps.
     
-    xlims : list-like, X-boundaries of the model
-    ylims : list-like, Y-boundaries of the model
-    resolution : list-like, two values indicating cell-size along the X and Y axes  
-    plotting : a bool, True to create and save plots of the figures in each step,
-    False, to not do it. It must be a real boolean, not a str.
-    downscaling: int, a value to scale up or down the frequency with which
-    the discontinuities are plotted. The smaller the cellsize, the larger the 
-    downscaling factor should be. Typical values should be between 1 and 5.
-
-    folder : path in which to save the figures, as a str
-
     Returns
     -------
-    current_mode: a 2D array with the failure mode found at each cell of the
-    grid at the last step of the model.
-    If plotting is True, it also saves the figure of each of the modeled
-    steps in the specified folder. Each figure shows a legend indicating
-    the aperture (a) or slip (u), and the driving stresses of each step.
-    By default, the figures plot the discontinuities and map the color of the
-    normal stresses found for each discontinuity.
-
+    A DynamicResults object (results.py) with one DiESResults per step, holding
+    failure_sn and failure_ss (MPa), failure_theta (deg), failure_mode,
+    above_failure and the orientations of the failure planes (plane_*, radians
+    counterclockwise from +x), plus the metadata of the step. Draw a step with
+    plotting.plot_dynamic_step.
     """    
 
     # Defining variables from crack_inputs
@@ -295,9 +244,8 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
     cfi=model_inputs[3] ; tension=model_inputs[4]
     
-    # litho and plotting must be real booleans, not str
+    # litho must be a real boolean, not a str
     litho=require_bool(litho,'litho')
-    plotting=require_bool(plotting,'plotting')
 
     # shear is the shear modulus, G. It must not be confused with the
     # coefficient of internal friction, cfi
@@ -354,6 +302,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     
     prev_betat=np.zeros(np.shape(grid[0]))
     
+    steps=[]
     step=0
     for step_dx, step_dy, step_dz, length, percentage in zip(dxs_to_use, dys_to_use, dzs_to_use, lengths_to_use, investigation_range):
         step=step+1
@@ -503,87 +452,122 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
         prev_bru=current_bru
         prev_brc=current_brc
         prev_betat=current_betat
-                        
-        ############# Plotting #############
-        if plotting:
-            figure=create_figure(xlims,ylims)
-                    
-            ax=figure.axes[0]
-            ax.plot((upper_tip[0],lower_tip[0]),(upper_tip[1],lower_tip[1]),c='red',lw=3, label='Crack') 
-            
-            # Plotting stresses
-            plot=ax.pcolormesh(x,y,current_sn,cmap='viridis', vmin=true_min_max(current_sn)[0], 
-                                vmax=true_min_max(current_sn)[1], shading='nearest')  
-            
-            cbar=figure.colorbar(plot,extend='both',format='%.2f')
-            cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
-            cbar.ax.tick_params(labelsize=12)
-            
-            ax.contour(x,y,current_sn, levels=[0], colors='black',linewidths=0.75,linestyles='--')
-            
-            # Plotting the gridcells which are found above failure in each timestep
-            ax.pcolormesh(x,y,current_above,cmap='Reds_r',shading='nearest')  
-            
-            # Plotting downsampled versions of the failure plane orientations
-            ds_brt=downsample_2darray(current_brt,downscaling)
-            ds_bru=downsample_2darray(current_bru,downscaling)
-            ds_brc=downsample_2darray(current_brc,downscaling)
-            ds_blt=downsample_2darray(current_blt,downscaling)
-            ds_blu=downsample_2darray(current_blu,downscaling)
-            ds_blc=downsample_2darray(current_blc,downscaling)
-            ds_betat=downsample_2darray(current_betat,downscaling)
-    
-            # Plane traces at orientation b (counterclockwise from +x) are drawn as
-            # (cos b, sin b). Until Nov 2026 they were drawn mirrored, as (cos b, -sin b).
-            # Plotting mode-II discs under compression
-            ax.quiver(x,y,np.cos(ds_brc),np.sin(ds_brc),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')
-            ax.quiver(x,y,np.cos(ds_blc),np.sin(ds_blc),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='red')          
-            
-            # Plotting mode-II discs under tension-compression
-            ax.quiver(x,y,np.cos(ds_bru),np.sin(ds_bru),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')
-            ax.quiver(x,y,np.cos(ds_blu),np.sin(ds_blu),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='purple')  
-            
-            # Plotting mixed-mode discs
-            ax.quiver(x,y,np.cos(ds_brt),np.sin(ds_brt),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
-            ax.quiver(x,y,np.cos(ds_blt),np.sin(ds_blt),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='dodgerblue')
-                    
-            # Plotting mode-I discs
-            ax.quiver(x,y,np.cos(ds_betat),np.sin(ds_betat),
-                            headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color='blue')
-            
-            # plt.legend(loc=3)
-            
-            ax.text(0.97,0.14, length_label+'·'+str(round(percentage,4))+' = '+str(round(length,2))+' m\n'+
-                    r'$\sigma_I$·'+str(round(percentage,4))+' = '+str(round(step_dx/1e6,2))+' MPa\n'+
-                    r'$\sigma_{II}$·'+str(round(percentage,4))+' = '+str(round(step_dy/1e6,2))+' MPa',
-                    bbox=dict(fc='white', ec='black'),
-                    horizontalalignment='right', verticalalignment='top',
-                    transform=ax.transAxes,fontsize=11, zorder=5)
-            
-            # sys.exit()
-            
-            figure.savefig(os.path.join(folder,'sn'+'_'+str(round(shear/1e9,2))+'_'+str(young/1e9)+'_'+str(tension/1e6)+'_'+str(step)+'_'+str(round(step_dx/1e6,2))+'_MPa.png'),dpi=300)
-            
-            #Closing and deleting the figure related info
-            plt.close()
-            del figure
-            del ds_brt, ds_bru, ds_brc, ds_blt, ds_blu, ds_blc, ds_betat
+        # Storing the results of this step (Phase 1, Nov 2026: the figures are no
+        # longer drawn inside this loop; see plotting.plot_dynamic_step)
+        step_metadata=current_model.metadata(disc, rx, ry, litho)
+        step_metadata.update({'step':step, 'n_steps':len(investigation_range), 'percentage':float(percentage),
+                              'dx':float(step_dx), 'dy':float(step_dy), 'dz':float(step_dz),
+                              'length':float(length), 'length_label':length_label})
+        steps.append(DiESResults(x, y, {'failure_sn':current_sn, 'failure_ss':current_ss,
+                                        'failure_theta':current_angle, 'failure_mode':current_mode,
+                                        'above_failure':current_above,
+                                        'plane_mixed_left':current_blt, 'plane_tc_left':current_blu,
+                                        'plane_comp_left':current_blc, 'plane_mixed_right':current_brt,
+                                        'plane_tc_right':current_bru, 'plane_comp_right':current_brc,
+                                        'plane_mode_I':current_betat},
+                                 step_metadata))
         
-        
-        # Deleting all previous model calculations to clean memory
         del disc
-        del current_sn, current_ss, current_angle, current_above
-        del current_blt, current_blu, current_blc, current_brt, current_bru, current_brc, current_betat 
-        
-        
         gc.collect()
-        
-    return current_mode
-     
-        ############# End of plotting #############
+    
+    return DynamicResults(steps, {'model_inputs':[float(v) for v in model_inputs], 'crack_inputs':[float(v) for v in crack_inputs],
+                                  'investigation_range':[float(v) for v in investigation_range],
+                                  'rx':float(np.mean(rx)), 'ry':float(np.mean(ry)), 'litho':litho, 'g':float(g)})
+
+
+def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder):
+    """
+
+    Parameters
+    ----------
+    crack_inputs :  list-like, contains the crack parameters,
+                    crack total aperture, as a float/int in m, measured
+                    at the center of the crack between its two walls.
+                    If the model is of a fault, then aperture should be 0,
+                    crack upper tip x coordinate,
+                    crack upper tip y coodintate,
+                    crack lower tip x coordinate,
+                    crack lower tip y coodintate,
+                    where the coordinates should be consistent with
+                    the x and y values used in xlims and ylims.
+                    Values should be negative so the crack is placed in the subsurface.
+                    The total height of the crack, b, is the distance
+                    between its two tips and is calculated from them.
+    model_inputs :  list-like, contains the model parameters for a
+                    single-model layer.
+                    Young's modulus as a float/int in Pa,
+                    Poissons ratio as an float/int between 0-0.5,
+                    density as an float/int in kgm^3,
+                    cfi, the coefficient of internal friction, as an float/int,
+                    tension, tensile strength as an float/int in Pa, negative
+                    (tension is negative on the Mohr diagram), e.g. -1.5e6.
+                    The cohesion is not an input: it is implicit in the
+                    modified Griffith criterion as C = 2|T|.
+    
+    dx : final driving stress orthogonal to the crack wall as an float/int, in Pa.
+    Only used if the crack aperture is 0 (a fault), because otherwise it is
+    calculated from the aperture. It can be >0 (a dilatant fault), <0
+    (a compaction band), or 0 (pure shearing).
+    dy : final driving stress parallel to the crack wall as an float/int, in Pa.
+    >0 values make the hanging wall slide down-dip (normal sense) and <0
+    values up-dip (reverse sense). For a vertical crack, >0 makes the block
+    at x > 0 move down. See docs/crack_coordinates_and_rotation.md
+    dz : final out-of-plane driving stress as an float/int, in Pa, usually 0
+    All three driving stresses are scaled together with each step of the model,
+    so the values given here are those reached at 100% of the investigation range.
+    rx : constant remote stress along the X axis as an float/int, in Pa
+    ry : constant remote stress along the Y axis as an float/int, in Pa
+    g : gravitational acceleration as a float/int in ms^-2
+    litho: a bool, True to take into account the lithostatic
+    stresses in the calculations, False, to not do it. It must be a real
+    boolean, not a str.
+    investigation_range :   list-like, set of X number of values between 0-1,
+                            between which the evolution of the crack opening
+                            or slip is to be modeled. The number of values in this
+                            parameter will determine the steps of the model
+    
+    xlims : list-like, X-boundaries of the model
+    ylims : list-like, Y-boundaries of the model
+    resolution : list-like, two values indicating cell-size along the X and Y axes  
+    plotting : a bool, True to create and save plots of the figures in each step,
+    False, to not do it. It must be a real boolean, not a str.
+    downscaling: int, a value to scale up or down the frequency with which
+    the discontinuities are plotted. The smaller the cellsize, the larger the 
+    downscaling factor should be. Typical values should be between 1 and 5.
+
+    folder : path in which to save the figures, as a str
+
+    Returns
+    -------
+    current_mode: a 2D array with the failure mode found at each cell of the
+    grid at the last step of the model.
+    If plotting is True, it also saves the figure of each of the modeled
+    steps in the specified folder. Each figure shows a legend indicating
+    the aperture (a) or slip (u), and the driving stresses of each step.
+    By default, the figures plot the discontinuities and map the color of the
+    normal stresses found for each discontinuity.
+
+    """
+    
+    # plotting must be a real boolean, not a str (checked before computing)
+    plotting=require_bool(plotting,'plotting')
+    
+    # Since Nov 2026 (Phase 1) the computation and the figures are separate:
+    # compute_dynamic_model returns the results of every step, and
+    # plotting.plot_dynamic_step draws them. The figures and the returned
+    # array are the same as before.
+    results=compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,
+                                  investigation_range,xlims,ylims,resolution)
+    
+    if plotting:
+        young=model_inputs[0] ; tension=model_inputs[4]
+        shear=G(model_inputs[0],model_inputs[1])
+        for step_results in results:
+            meta=step_results.metadata
+            figure=dies_plotting.plot_dynamic_step(step_results, downscaling)
+            figure.savefig(os.path.join(folder,'sn'+'_'+str(round(shear/1e9,2))+'_'+str(young/1e9)+'_'+str(tension/1e6)
+                                        +'_'+str(meta['step'])+'_'+str(round(meta['dx']/1e6,2))+'_MPa.png'),dpi=300)
+            plt.close(figure)
+            del figure
+    
+    return results.final_mode()

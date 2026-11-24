@@ -67,7 +67,24 @@ FIELD_INFO = {
     # Stresses on the optimal shear planes, compression positive
     'sn': ('Pa', 'normal stress on the optimal shear planes, compression positive'),
     'ss': ('Pa', 'shear stress on the optimal shear planes'),
+    # Failure state of each node in dynamic_model (one DiESResults per step)
+    'failure_sn': ('MPa', 'normal stress on the failure plane at failure (first failure is kept), compression positive'),
+    'failure_ss': ('MPa', 'shear stress on the failure plane at failure (first failure is kept)'),
+    'failure_theta': ('deg', 'angle between sigma1 and the normal to the failure plane'),
+    'failure_mode': ('', "failure mode: 'Below', 'Above', 'Mode I', 'Mixed-mode I-II', "
+                         "'Mode II - tension-compression', 'Mode II - compression' or 'Singular'"),
+    'above_failure': ('', '0 where the node is above failure, NaN elsewhere (as drawn in red)'),
+    'plane_mixed_left': ('rad', 'orientation of mixed-mode I-II planes, left of the crack, counterclockwise from +x'),
+    'plane_tc_left': ('rad', 'orientation of mode II tension-compression planes, left of the crack'),
+    'plane_comp_left': ('rad', 'orientation of mode II compression planes, left of the crack'),
+    'plane_mixed_right': ('rad', 'orientation of mixed-mode I-II planes, right of the crack'),
+    'plane_tc_right': ('rad', 'orientation of mode II tension-compression planes, right of the crack'),
+    'plane_comp_right': ('rad', 'orientation of mode II compression planes, right of the crack'),
+    'plane_mode_I': ('rad', 'orientation of mode I planes (they contain sigma1)'),
 }
+
+# Failure modes that mean that a node has failed (kept in later steps)
+FAILED_MODES = ('Mode I', 'Mixed-mode I-II', 'Mode II - tension-compression', 'Mode II - compression', 'Above')
 
 
 class DiESResults(object):
@@ -234,6 +251,88 @@ class DiESResults(object):
                      for name, values in self.fields.items()}
         attrs = {'metadata_json': json.dumps(self.metadata, default=_to_json)}
         return xr.Dataset(data_vars, coords={'x': self.x_nodes(), 'y': self.y_nodes()}, attrs=attrs)
+
+
+class DynamicResults(object):
+    """
+    Results of model_functions.compute_dynamic_model: one DiESResults per step
+    (Phase 1, 2026-11-24).
+    
+    Each step holds failure_sn, failure_ss, failure_theta, failure_mode,
+    above_failure and the seven plane_* orientations (see FIELD_INFO), and its
+    metadata describes the model, the crack of that step and the step itself:
+    'step', 'n_steps', 'percentage', 'dx', 'dy', 'dz' (driving stresses of the
+    step, Pa), 'length' and 'length_label' (aperture 'a' or slip 'u', m).
+    
+    Example
+    -------
+        dyn = compute_dynamic_model(...)
+        len(dyn) ; dyn[-1]                 # number of steps ; last step
+        dyn.final_mode()                   # failure mode at the last step
+        dyn.failure_step()                 # step at which each node first failed
+        dyn.save('dynamic.npz') ; DynamicResults.load('dynamic.npz')
+    """
+    
+    def __init__(self, steps, metadata=None):
+        self.steps = list(steps)
+        self.metadata = dict(metadata or {})
+    
+    def __len__(self):
+        return len(self.steps)
+    
+    def __getitem__(self, index):
+        return self.steps[index]
+    
+    def __iter__(self):
+        return iter(self.steps)
+    
+    def __repr__(self):
+        shape = self.steps[0].shape if self.steps else None
+        return 'DynamicResults(' + str(len(self)) + ' steps on a grid of ' + str(shape) + ' nodes)'
+    
+    def final_mode(self):
+        """2D array with the failure mode of each node at the last step."""
+        return self.steps[-1]['failure_mode']
+    
+    def failure_step(self):
+        """
+        2D array with the number of the step (1, 2, ...) at which each node first
+        reached a failed state (any mode in FAILED_MODES, including 'Above'), and
+        0 where it never did.
+        """
+        first = np.zeros(self.steps[0].shape, dtype=int)
+        for k, step in enumerate(self.steps, start=1):
+            failed = np.isin(step['failure_mode'].astype(str), FAILED_MODES)
+            first = np.where((first == 0) & failed, k, first)
+        return first
+    
+    def save(self, path):
+        """Saves every step to one compressed .npz file; reopen with load()."""
+        if not self.steps:
+            raise ValueError('There are no steps to save')
+        arrays = {'x': self.steps[0].x, 'y': self.steps[0].y}
+        for k, step in enumerate(self.steps):
+            for name, values in step.fields.items():
+                arrays['step' + str(k) + '_' + name] = values
+        arrays['n_steps'] = np.array(len(self.steps))
+        arrays['units_json'] = np.array(json.dumps([step.units for step in self.steps]))
+        arrays['step_metadata_json'] = np.array(json.dumps([step.metadata for step in self.steps], default=_to_json))
+        arrays['metadata_json'] = np.array(json.dumps(self.metadata, default=_to_json))
+        np.savez_compressed(path, **arrays)
+    
+    @classmethod
+    def load(cls, path):
+        """Opens dynamic results saved with save()."""
+        with np.load(path, allow_pickle=False) as data:
+            n = int(data['n_steps'])
+            units = json.loads(str(data['units_json']))
+            step_meta = json.loads(str(data['step_metadata_json']))
+            steps = []
+            for k in range(n):
+                prefix = 'step' + str(k) + '_'
+                fields = {key[len(prefix):]: data[key] for key in data.files if key.startswith(prefix)}
+                steps.append(DiESResults(data['x'], data['y'], fields, step_meta[k], units[k]))
+            return cls(steps, json.loads(str(data['metadata_json'])))
 
 
 def _to_json(value):

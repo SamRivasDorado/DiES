@@ -24,6 +24,9 @@ from matplotlib.ticker import MultipleLocator
 
 from Helper_functions import G
 from Helper_functions import boundaries_contours
+from Helper_functions import create_figure
+from Helper_functions import true_min_max
+from Helper_functions import downsample_2darray
 
 
 class PlotError(Exception):
@@ -308,4 +311,62 @@ def plot_crack_opening(crack, v, E):
     ax.scatter(length, disps[3], c='brown', marker='o', s=5, label=r'u$_y$, x<0')
     ax.legend(title=r'$\sigma_e$ = ' + str(crack.dpx/1E6) + ' MPa\nv =' + str(v) + '\nE = ' + str(E/1E9)
               + ' GPa\na = ' + str(round(h/2/1E3, 2)) + ' km', bbox_to_anchor=(1, 1))
+    return figure
+
+
+def plot_dynamic_step(step, downscaling):
+    """
+    Figure of one step of the dynamic model (the drawing code formerly inside
+    the loop of dynamic_model, moved unchanged in Nov 2026).
+    
+    step: one DiESResults of a DynamicResults (compute_dynamic_model),
+    downscaling: int, keep one plane trace every downscaling nodes.
+    
+    It maps the normal stress on the failure planes (MPa), marks in red the
+    nodes above failure and draws the traces of the failure planes: mode II
+    under compression (red), mode II tension-compression (purple), mixed-mode
+    I-II (dodgerblue) and mode I (blue), as (cos b, sin b).
+    """
+    _require(step, 'failure_sn', 'above_failure', 'plane_mode_I')
+    meta = step.metadata
+    upper_tip, lower_tip = _crack_tips(step)
+    x, y = step.x, step.y
+    current_sn = step['failure_sn'] ; current_above = step['above_failure']
+    percentage = meta['percentage'] ; length = meta['length'] ; length_label = meta['length_label']
+    step_dx = meta['dx'] ; step_dy = meta['dy']
+    
+    figure = create_figure(meta['x_limits'], meta['y_limits'])
+    ax = figure.axes[0]
+    ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3, label='Crack')
+    
+    # Plotting stresses
+    plot = ax.pcolormesh(x, y, current_sn, cmap='viridis', vmin=true_min_max(current_sn)[0],
+                         vmax=true_min_max(current_sn)[1], shading='nearest')
+    cbar = figure.colorbar(plot, extend='both', format='%.2f')
+    cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
+    cbar.ax.tick_params(labelsize=12)
+    ax.contour(x, y, current_sn, levels=[0], colors='black', linewidths=0.75, linestyles='--')
+    
+    # Plotting the gridcells which are found above failure in each timestep
+    ax.pcolormesh(x, y, current_above, cmap='Reds_r', shading='nearest')
+    
+    # Plotting downsampled versions of the failure plane orientations
+    ds = {name: downsample_2darray(step[name], downscaling) for name in
+          ('plane_mixed_right', 'plane_tc_right', 'plane_comp_right',
+           'plane_mixed_left', 'plane_tc_left', 'plane_comp_left', 'plane_mode_I')}
+    
+    # Plane traces at orientation b (counterclockwise from +x) are drawn as (cos b, sin b)
+    for name, colour in (('plane_comp_right', 'red'), ('plane_comp_left', 'red'),          # mode II, compression
+                         ('plane_tc_right', 'purple'), ('plane_tc_left', 'purple'),      # mode II, tension-compression
+                         ('plane_mixed_right', 'dodgerblue'), ('plane_mixed_left', 'dodgerblue'),  # mixed mode
+                         ('plane_mode_I', 'blue')):                                     # mode I
+        ax.quiver(x, y, np.cos(ds[name]), np.sin(ds[name]),
+                  headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color=colour)
+    
+    ax.text(0.97, 0.14, length_label + '·' + str(round(percentage, 4)) + ' = ' + str(round(length, 2)) + ' m\n' +
+            r'$\sigma_I$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dx/1e6, 2)) + ' MPa\n' +
+            r'$\sigma_{II}$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dy/1e6, 2)) + ' MPa',
+            bbox=dict(fc='white', ec='black'),
+            horizontalalignment='right', verticalalignment='top',
+            transform=ax.transAxes, fontsize=11, zorder=5)
     return figure
