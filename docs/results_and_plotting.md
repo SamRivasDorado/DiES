@@ -87,6 +87,47 @@ Each step holds `failure_sn`, `failure_ss` (MPa), `failure_theta` (degrees), `fa
 counterclockwise from +x). `dynamic_model(..., plotting=True, folder=...)` still saves the same
 figures, with the same file names.
 
+## Classes and their methods
+
+`model.compute()` and `compute_dynamic_model()` are functions, not classes: they compute and
+return an object of one of the two result classes of `results.py`.
+
+### `DiESResults` — one evaluation of a model
+
+Returned by `model.compute()`, and one per step inside `DynamicResults`.
+
+| Method or attribute | What it does |
+|---|---|
+| `res['sxx']`, `res.sxx` | A field (2D array) by name, as an item or as an attribute. |
+| `'sxx' in res` | Whether the field exists. |
+| `names()` | Names of the fields it holds. |
+| `shape` | Shape of the grid (property). |
+| `x_nodes()`, `y_nodes()` | x of each grid column and y of each grid row (1D arrays). |
+| `units`, `metadata` | Units of each field; inputs of the model (JSON-serializable dict). |
+| `probe(x, y, names=None)` | Values at the grid node nearest to (x, y), as a dict. |
+| `profile(A, B, n=200, names=None)` | Values along the segment A→B at `n` points, interpolated bilinearly, as a dict. |
+| `mask(condition, name)` | The field `name` as an array, with `NaN` where `condition` is False. |
+| `save(path)`, `DiESResults.load(path)` | Save to and load from `.npz` plus JSON metadata. |
+| `to_csv(path, names=None)` | One row per node: x, y and the chosen fields, with units in the header. |
+| `to_xarray()` | Optional export to an `xarray.Dataset` (only if xarray is installed). |
+
+### `DynamicResults` — the steps of a dynamic model
+
+Returned by `compute_dynamic_model()`. It holds one `DiESResults` per step, with the failure
+fields listed above, and the metadata of the whole run.
+
+| Method or attribute | What it does |
+|---|---|
+| `len(dyn)` | Number of steps. |
+| `dyn[k]` | The `DiESResults` of step `k` (from 0; `dyn[-1]` is the last one). |
+| `for step in dyn` | Iterates over the steps. |
+| `steps`, `metadata` | The list of `DiESResults`; inputs of the run. |
+| `final_mode()` | 2D array with the failure mode of each node at the last step (what `dynamic_model` returns). |
+| `failure_step()` | 2D array with the step (1, 2, ...) at which each node first failed, including `'Above'`; 0 where it never did. |
+| `save(path)`, `DynamicResults.load(path)` | Save to and load from `.npz` plus JSON metadata. |
+
+Each step also has every `DiESResults` method (`probe`, `profile`, `mask`, `to_csv`...).
+
 ## What changed for existing code
 
 - `model.plot_*`, `crack.plot_mode_I_crack_displacements`, `single_model`, `dynamic_model`:
