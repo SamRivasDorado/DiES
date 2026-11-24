@@ -836,11 +836,15 @@ class model(object):
             
         elif displacement=='uxy':
             # Magnitude of the in-plane displacement vector
-            dp=dx ; ds=dy ; dt=np.hypot(dx,dy) ; label=r'|u$_{xy}$| (m)'
+            dp=dx ; ds=dy ; dt=np.hypot(dx,dy) ; plot_params=boundaries_contours(dt, step) ; label=r'|u$_{xy}$| (m)'
+        
+        else:
+            raise InputError('Invalid displacement. Input "ux", "uy", or "uxy" instead.')
             
         if option=='vectors':
-            # The arrows are scaled with the largest in-plane displacement magnitude
-            plot=ax.quiver(x,y,dp,ds,dt, width=0.0050, scale=np.nanmax(np.hypot(dx,dy))/0.1, cmap='viridis')
+            # The arrows are scaled with the largest magnitude of the plotted vector
+            # (|ux|, |uy| or |u|, depending on the selected displacement)
+            plot=ax.quiver(x,y,dp,ds,dt, width=0.0050, scale=np.nanmax(np.hypot(dp,ds))/0.1, cmap='viridis')
             cbar=figure.colorbar(plot,extend='both')
             cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
             cbar.ax.tick_params(labelsize=12)
@@ -866,7 +870,7 @@ class model(object):
             elif step>=0.1:
                 ax.clabel(contours,fmt='%1.1f')
         else:
-            raise InputError('Invalid displacement. Input "ux", "uy", or "uxy" instead.')
+            raise InputError('Invalid option. Input "vectors" or "contours" instead.')
                 
         ax.text(0.97,0.10,r'$\sigma_I$ = '+str(round(crack.x()/1E6,2))
                 +' MPa\n'+r'$\sigma_{II}$ = '+str(round(crack.y()/1E6,2))+' MPa',
