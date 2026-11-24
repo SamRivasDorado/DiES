@@ -11,7 +11,8 @@ in order, in <out>/DiES_gallery.pdf:
     plot_stress_trajectories without and with the optimal shear planes
     plot_plane_stresses      normal and shear stress on planes at --angle
     crack.plot_mode_I_crack_displacements
-    dynamic_model            one figure per step (plotting=True)
+    dynamic_model            driving stress increased in steps of --step-mpa (0.25 MPa by
+                             default), showing one figure every --show-every steps (4)
 
 Usage, from the repository root:
 
@@ -74,7 +75,26 @@ def figures(name, litho, rx, ry, angle):
     yield 'crack.plot_mode_I_crack_displacements', disc.plot_mode_I_crack_displacements(MODEL_INPUTS[1], MODEL_INPUTS[0])
 
 
-def dynamic_figures(name, litho, rx, ry, folder, steps):
+def final_driving_stress(name):
+    """The largest final driving stress of a case (sigma_I for an opening crack), in Pa."""
+    title, ci, dx, dy, dz = CASES[name]
+    E, nu = MODEL_INPUTS[0], MODEL_INPUTS[1]
+    if ci[0] != 0:
+        dx = ci[0]*G(E, nu)/(points_distance((ci[1], ci[2]), (ci[3], ci[4]))*(1 - nu))
+    return max(abs(dx), abs(dy), abs(dz))
+
+
+def investigation_range(name, step_mpa):
+    """Fractions of the final driving stress so that each step adds step_mpa MPa."""
+    n = max(1, int(round(final_driving_stress(name)/(step_mpa*1e6))))
+    return [i/n for i in range(1, n + 1)]
+
+
+def dynamic_figures(name, litho, rx, ry, folder, steps, show_every):
+    """
+    Runs dynamic_model with plotting=True and returns the figures of every
+    show_every-th step (and of the last one), sorted by step.
+    """
     title, ci, dx, dy, dz = CASES[name]
     os.makedirs(folder, exist_ok=True)
     for old in glob.glob(os.path.join(folder, '*.png')):
@@ -83,8 +103,9 @@ def dynamic_figures(name, litho, rx, ry, folder, steps):
                   XLIMS, YLIMS, RESOLUTION, 2, True, folder)
     plt.close('all')
     # Files are named ..._<step>_<dx>_MPa.png; sort by step
-    paths = glob.glob(os.path.join(folder, '*.png'))
-    return sorted(paths, key=lambda p: float(os.path.basename(p).split('_')[-3]))
+    paths = sorted(glob.glob(os.path.join(folder, '*.png')),
+                   key=lambda p: float(os.path.basename(p).split('_')[-3]))
+    return [p for k, p in enumerate(paths, start=1) if k % show_every == 0 or k == len(paths)]
 
 
 def main(argv=None):
@@ -94,8 +115,10 @@ def main(argv=None):
     parser.add_argument('--no-litho', action='store_true')
     parser.add_argument('--rx', type=float, default=0.0)
     parser.add_argument('--ry', type=float, default=0.0)
-    parser.add_argument('--steps', type=float, nargs='+', default=[0.25, 0.5, 0.75, 1.0],
-                        help='investigation_range of dynamic_model')
+    parser.add_argument('--step-mpa', type=float, default=0.25,
+                        help='increment of the driving stress per dynamic_model step, MPa')
+    parser.add_argument('--show-every', type=int, default=4,
+                        help='plot one dynamic_model step every this many steps')
     args = parser.parse_args(argv)
     litho = not args.no_litho
     os.makedirs(args.out, exist_ok=True)
@@ -126,16 +149,20 @@ def main(argv=None):
                 plt.close(fig)
                 print(name, '|', label)
 
-            for j, path in enumerate(dynamic_figures(name, litho, args.rx, args.ry,
-                                                     os.path.join(case_dir, 'dynamic'), args.steps), start=1):
+            steps = investigation_range(name, args.step_mpa)
+            shown = dynamic_figures(name, litho, args.rx, args.ry, os.path.join(case_dir, 'dynamic'),
+                                    steps, args.show_every)
+            for j, path in enumerate(shown, start=1):
                 image = plt.imread(path)
                 page = plt.figure(figsize=(9, 9*image.shape[0]/image.shape[1] + 0.6))
                 ax = page.add_axes([0, 0, 1, 1 - 0.6/page.get_figheight()])
                 ax.imshow(image) ; ax.set_axis_off()
-                page.suptitle(title + '\ndynamic_model, step ' + str(j) + ' of ' + str(len(args.steps))
-                              + ' (' + os.path.basename(path) + ')', fontsize=10)
+                step_number = int(os.path.basename(path).split('_')[-3])
+                page.suptitle(title + '\ndynamic_model, step ' + str(step_number) + ' of ' + str(len(steps))
+                              + ' (+' + str(args.step_mpa) + ' MPa per step; one every '
+                              + str(args.show_every) + ' shown)', fontsize=10)
                 pdf.savefig(page) ; plt.close(page)
-                print(name, '| dynamic_model step', j)
+                print(name, '| dynamic_model step', step_number, 'of', len(steps))
 
     print('Saved', pdf_path)
     return pdf_path

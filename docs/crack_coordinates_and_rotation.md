@@ -5,6 +5,25 @@ analytical solution for a straight 2D crack of **any orientation**: how each poi
 relative to the crack, how the angles are measured, and how the results are rotated back to the
 global X–Y axes. It also records the sign conventions and the verification of the implementation.
 
+## Change log
+
+Every change to the calculation of coordinates, angles and orientations, with the date it was
+found and fixed and the commit on branch `update-bools-crack-naming` of `SamRivasDorado/DiES`.
+Dates are local time in Madrid (CET).
+
+| Date | Commit | Change | Section |
+|---|---|---|---|
+| 2026-11-23 | `1915dc4` | Crack solution evaluated in the local frame of the crack (`crack_frame`, `local_coordinates`), with signed tripolar angles (`arctan2`) instead of the unsigned `arccos` of `angle_between_lines`, and the results rotated to the global axes. The side-dependent sign flips of `dpx`/`dpy` were removed. | 2–5, 7 |
+| 2026-11-23 | `1915dc4` | Shear sense made independent of the dip direction (factor `h`): `dpy > 0` = hanging wall slides down-dip. | 2, 6 |
+| 2026-11-23 | `1915dc4` | Mode III: the spurious `-1` in the out-of-plane shear on planes normal to the crack removed; `uz` now jumps across the crack. | 5, 8 |
+| 2026-11-23 | `1915dc4` | Points exactly on the crack take the values of its n-side wall (previously shifted 0.1 m in x). | 3 |
+| 2026-11-24 | `ace6c94` | Orientation of σ1/σ3: `½·atan2(2σxy, σxx−σyy)`, counterclockwise from +x, in (−90°, 90°]. Removed the 0.001 replacement of a zero denominator (0° instead of 90° where σ1 is vertical with σxy = 0) and the 90° forced over the whole grid when `dpx == 0 and s11 == 0`. | 10.2 |
+| 2026-11-24 | `ace6c94` | Orientations drawn as `(cos a, sin a)` instead of the mirrored `(cos a, −sin a)`, in `plot_stress_trajectories` and in the failure planes of `dynamic_model`. | 10.1, 10.3, 10.4 |
+| 2026-11-24 | `ace6c94` | Failure planes of `dynamic_model` computed by `failure_plane_orientation()` (conjugate plane dipping towards the crack) instead of four hand-tuned branches depending on the sign of `s1a`. | 10.4 |
+| 2026-11-24 | `ace6c94` | Sign of T in `evaluate_stress_state`: `T = T/1e6` instead of `T = (−T)/1e6`; T must be negative. | 11 |
+
+Related changes to the figures, outside the angle calculations: on 2026-11-23 (`1915dc4`) and 2026-11-24 (`2a4e5f3`), the colour and arrow scale of `plot_displacement` changed from `(ux+uy)/2` to the magnitude of the plotted vector, and the `uxy` contours stopped crashing.
+
 ## 1. Why the solution is evaluated in a local frame
 
 The solution (Pollard and Segall, 1987; Pollard and Martel, 2020) is the plane-strain solution for
@@ -77,7 +96,7 @@ eta = d · n = (x - xc)·nx + (y - yc)·ny      normal to the crack (> 0 on the 
 This is the inverse rotation of Section 5. `x` and `y` may be scalars or arrays, so a whole grid
 can be evaluated in one call.
 
-**Points on the crack plane.** If `eta` is exactly 0 (including `-0.0`) it is set to `+0.0`. Points
+**Points on the crack plane** (since 2026-11-23, `1915dc4`). If `eta` is exactly 0 (including `-0.0`) it is set to `+0.0`. Points
 lying on the crack then take the values of its n-side wall. This matters because the displacements
 and some stresses are discontinuous across the crack. The previous code shifted such points 0.1 m
 in x instead.
@@ -112,7 +131,7 @@ Taking the square roots of `z - a` and `z + a` separately, each with its princip
 (-π, π], gives the branch of `(z² - a²)^0.5` that behaves like `z` far from the crack and is
 discontinuous only across the crack itself. That is the physically correct branch.
 
-**What was wrong before.** The angles were computed with `angle_between_lines`, i.e. with
+**What was wrong before** (found and fixed on 2026-11-23, `1915dc4`). The angles were computed with `angle_between_lines`, i.e. with
 `arccos` of a dot product. That is always between 0 and 180°, so it cannot tell one side of the
 crack from the other. The equations were then right on one side only. The code tried to fix the
 other side by flipping the sign of `dpx` (in `displacements`) or `dpy` (in `stresses`) depending on
@@ -159,7 +178,7 @@ These are the same equations DiES has always used (`ux` → `u_n`, `uy` → `u_t
 Westergaard solution for a crack with uniformly loaded walls, `Z = z/(z²-a²)^0.5 - 1`, expanded in
 tripolar form. On the walls (`eta → 0`, `|xi| < a`) they give `s_nn = -p`, `s_tn = -s` and
 `s_nz = -s3`: the crack-induced stresses cancel the driving stresses. The only change to the
-equations themselves is in the out-of-plane shear on planes normal to the crack: it was written
+equations themselves (2026-11-23, `1915dc4`) is in the out-of-plane shear on planes normal to the crack: it was written
 `s3·(S - 1)`, but the `-1` made it tend to `-s3` far from the crack instead of 0. It is now `s3·S`,
 which is consistent with `u_z` through Hooke's law.
 
@@ -167,7 +186,7 @@ which is consistent with `u_z` through Hooke's law.
 
 - **Tension positive** for all stresses, as in the rest of DiES.
 - **`dpx` > 0** opens the crack (mode I). The opening is always normal to the crack.
-- **`dpy` > 0** makes the **hanging wall slide down-dip** relative to the footwall (normal sense);
+- **`dpy` > 0** (convention set on 2026-11-23, `1915dc4`) makes the **hanging wall slide down-dip** relative to the footwall (normal sense);
   **`dpy` < 0**, up-dip (reverse sense). For a vertical crack, `dpy` > 0 makes the block at x > 0
   move down relative to the block at x < 0. This is the sense the previous code already produced
   for vertical cracks, so their displacements do not change. With `s = h·dpy`, the n-side block
@@ -212,6 +231,9 @@ For a vertical crack (`t = (0, -1)`, `n = (1, 0)`) this reduces to `sxx = s_nn`,
 `t = 0.5·((syy - sxx)² + 4·sxy²)^0.5` are computed, all in the global axes.
 
 ## 8. Verification
+
+Tests added on 2026-11-23 (`1915dc4`).
+
 
 `tests/reference_westergaard.py` is an independent implementation of the same problem written
 with complex potentials (Westergaard, 1939) instead of tripolar coordinates.
@@ -262,7 +284,8 @@ with complex potentials (Westergaard, 1939) instead of tripolar coordinates.
 
 The stresses of Sections 5–7 feed the principal stresses, their orientations and, through them,
 the orientations of the failure planes that `dynamic_model` predicts. This section documents how
-those orientations are computed and drawn since November 2026, and what was wrong before.
+those orientations are computed and drawn since 2026-11-24 (`ace6c94`), and what was wrong before.
+The errors were found on 2026-11-24, while reviewing every figure DiES produces (`tests/plot_gallery.py`).
 
 ### 10.1 Convention
 
@@ -288,7 +311,7 @@ Checks: with `σxy = 0` and `σxx > σyy` (horizontal σ1), `atan2(0, +) = 0` gi
 and `σxx < σyy` (vertical σ1, e.g. the lithostatic state) `atan2(0, −) = 180°` gives 90°. There is
 no division, so no special case is needed.
 
-**What was wrong before.**
+**What was wrong before** (found and fixed on 2026-11-24, `ace6c94`).
 
 - **(a)** The angle was `arctan(2σxy / ((σxx − σyy) + R))`, with `R = ((σxx − σyy)² + 4σxy²)^0.5`.
   Where `σxy = 0` and `σxx < σyy` the denominator is 0. It was replaced by 0.001, which gave
@@ -300,12 +323,14 @@ no division, so no special case is needed.
 - **(c)** The orientations were drawn as `(cos a, −sin a)`, i.e. mirrored about the horizontal.
 - **(d)** Combined with the old sign error of `σxy` at x > 0 (Section 4), (c) cancelled out on the
   right of a vertical crack, so x > 0 was drawn correctly and x < 0 was mirrored (up to ~18° near the
-  dike, 95th percentile). After the core was corrected (Section 4), both sides were mirrored until
-  (a)–(c) were fixed.
+  dike, 95th percentile). After the core was corrected on 2026-11-23 (Section 4), both sides were mirrored until
+  (a)–(c) were fixed on 2026-11-24.
 
 The new orientations match the eigenvectors of the stress tensor to ~1e−6° everywhere.
 
 ### 10.3 Optimal shear planes — `plot_stress_trajectories(planes=True)`
+
+Drawn as `(cos, sin)` since 2026-11-24 (`ace6c94`); the formulas of the planes did not change.
 
 The two conjugate optimal planes lie at `±coula` from σ1, where `coula = ½·arctan(1/μ)` is the angle
 between σ1 and the planes (`θ_opt = 90° − coula`). Their orientations are `s1a − coula` and
@@ -313,7 +338,7 @@ between σ1 and the planes (`θ_opt = 90° − coula`). Their orientations are `
 
 ### 10.4 Failure planes in `dynamic_model` — `failure_plane_orientation`
 
-At each node, `evaluate_stress_state` returns the failure mode and `2θ`, the angle on the Mohr
+Since 2026-11-24 (`ace6c94`). At each node, `evaluate_stress_state` returns the failure mode and `2θ`, the angle on the Mohr
 circle from the σ1 point to the point of failure. `θ` is the angle between σ1 and the **normal** to
 the failure plane, so the plane itself lies at `δ = 90° − θ` from σ1.
 `failure_plane_orientation(s1a, θ, mode, side)` in `Failure_Determination.py` returns its orientation:
@@ -333,7 +358,7 @@ the failure plane, so the plane itself lies at `δ = 90° − θ` from σ1.
 
 The traces are drawn as `(cos b, sin b)`.
 
-**What was wrong before.** The original code used four hand-tuned branches, depending on the side
+**What was wrong before** (found and fixed on 2026-11-24, `ace6c94`). The original code used four hand-tuned branches, depending on the side
 of the crack and on the sign of `s1a`:
 
 ```
@@ -348,6 +373,9 @@ error was twice the tilt of σ1, which explains the comments `#Why? This does no
 drawings` in the original code.
 
 ### 10.5 Verification
+
+Tests added on 2026-11-24 (`ace6c94`).
+
 
 `tests/test_orientations_and_failure.py`:
 
@@ -373,7 +401,7 @@ of the normal-stress axis and the tensile strength **T is always negative** (e.g
 the Coulomb line `τ = μσn − 2T` intersects the shear-stress axis at `−2T = 2|T|`, the cohesion
 (C = 2|T|, Rivas-Dorado et al., 2023, eq. 12b).
 
-**What was wrong before.** The function converted the inputs with `T = (−T)/1e6`, which turned
+**What was wrong before** (found on 2026-11-24 in `2a4e5f3`, fixed on 2026-11-24 in `ace6c94`; the convention, T always negative, was confirmed by Sam the same day). The function converted the inputs with `T = (−T)/1e6`, which turned
 T positive. The rest of the function (`x < T` for points beyond the tensile strength, the parabola
 vertex at `T`, the intercept `−2T`) is written for a negative T, so the envelope ended up in
 compression. Most stable states were classified as `'Above'`: for example, the lithostatic state at
