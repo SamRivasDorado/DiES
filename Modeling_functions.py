@@ -69,7 +69,7 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
-                    mu, the coefficient of internal friction, as an float/int,
+                    cfi, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa, negative
                     (tension is negative on the Mohr diagram), e.g. -1.5e6.
                     The cohesion is not an input: it is implicit in the
@@ -229,7 +229,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
-                    mu, the coefficient of internal friction, as an float/int,
+                    cfi, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa, negative
                     (tension is negative on the Mohr diagram), e.g. -1.5e6.
                     The cohesion is not an input: it is implicit in the
@@ -379,7 +379,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
         
         for rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,rS,rm,rT,x_row in zip (s1,s3,s1a,s3a,prev_sn,prev_ss,prev_angle,prev_mode,prev_above,prev_blt,prev_blu,prev_blc,prev_brt,prev_bru,prev_brc,prev_betat,grid[5],grid[6],grid[8],x):
     
-            mu=rm[0] ; T=rT[0]
+            cfi=rm[0] ; T=rT[0]
     
             row_sn=[] ; row_ss=[] ; row_angle=[] ; row_mode=[] ; row_above=[]
             
@@ -393,7 +393,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
             
             for vs1,vs3,vs1a,vs3a,psn,pss,pa,pm,pabove,pblt,pblu,pblc,pbrt,pbru,pbrc,pbt,cx in zip(rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,x_row):
                 
-                sn, ss, angle, mode = evaluate_stress_state(vs1,vs3,mu,T,'values')
+                sn, ss, angle, mode = evaluate_stress_state(vs1,vs3,cfi,T,'values')
                 
                 # Obtaining theta from 2theta
                 angle=angle/2

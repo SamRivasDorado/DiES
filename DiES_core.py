@@ -307,6 +307,10 @@ def displacements(dpx,dpy,dpz,nu,E,upper_tip,crack_center,lower_tip,point):
 
 ########################### Traction boundary value problem, stress field equations ###########################
 
+# Relative distance to a crack tip (in units of the half-length a) below which a point
+# is treated as lying on the tip, where the stress solution is singular
+TIP_TOLERANCE=1e-6
+
 def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,crack_center,lower_tip,a,point):
     """
     Stresses around a straight 2D crack loaded by uniform driving stresses on its
@@ -345,7 +349,9 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,crack_center,lower_t
     (s_nn across it, s_tt along it, s_tn shear, see crack_frame) and the
     tensor is rotated to the global axes before adding the remote stresses.
     Points exactly on the crack take the values of its n-side wall.
-    The solution is singular at the tips.
+    The solution is singular at the tips: points closer than TIP_TOLERANCE*a to
+    a tip (in practice, grid nodes that coincide with a tip) return NaN, and
+    evaluate_stress_state classifies them as 'Singular'.
     """
     center, t, n, a_tips, h = crack_frame(upper_tip,lower_tip)
     check_crack_geometry(upper_tip,crack_center,lower_tip,center,a_tips,a)
@@ -388,6 +394,15 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,crack_center,lower_t
 
     # Calculating t, the maximum in-plane shear stress
     t_max=0.5*(((syy-sxx)**2)+4*(sxy**2))**0.5
+    
+    # Singular points: on a tip, rounding leaves r1 or r2 ~1e-13 m and stresses of
+    # ~1e14 Pa instead of NaN. They are set to NaN explicitly (since Nov 2026).
+    singular=np.minimum(r1,r2)<TIP_TOLERANCE*a
+    if np.any(singular):
+        sxx, syy, sxy, sxz, syz, szz, t_max = [np.where(singular,np.nan,v) for v in
+                                               np.broadcast_arrays(sxx,syy,sxy,sxz,syz,szz,t_max)]
+        if np.ndim(singular)==0:
+            sxx, syy, sxy, sxz, syz, szz, t_max = [float(v) for v in (sxx,syy,sxy,sxz,syz,szz,t_max)]
 
     return sxx,syy,sxy,sxz,syz,szz,t_max
 
@@ -514,7 +529,7 @@ class crack(object):
         return figure
 
 class model(object):
-    def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_mu,layers_T, g):
+    def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_cfi,layers_T, g):
         """
         Parameters
         --------------
@@ -547,7 +562,7 @@ class model(object):
         layers_d: an array-like object with floats/ints defining the density
         of each of the layers,in kg m-3
         
-        layers_mu: an array-like object with floats/ints defining the coefficient of 
+        layers_cfi: an array-like object with floats/ints defining the coefficient of 
         internal friction of each of the layers, unitless
         
         layers_T: an array-like object with floats/ints defining the tensile
@@ -565,13 +580,13 @@ class model(object):
         self.x_cellsize=x_cellsize ; self.y_cellsize=y_cellsize
         self.y_position_layers=y_position_layers
         self.layers_E=layers_E ; self.layers_v=layers_v ; self.layers_d=layers_d
-        self.layers_mu=layers_mu; self.layers_T=layers_T
+        self.layers_cfi=layers_cfi; self.layers_T=layers_T
         
         # Cohesion implicit in the modified Griffith criterion: C = 2|T|
         self.layers_c=2*np.abs(np.asarray(self.layers_T,dtype=float))
         
         # The coulomb angle is defined implicitly after mu for each layer
-        self.layers_coula=0.5*np.arctan(1/np.asarray(self.layers_mu,dtype=float))
+        self.layers_coula=0.5*np.arctan(1/np.asarray(self.layers_cfi,dtype=float))
     
         # self.layers_m=layers_m
         self.g=g
@@ -646,7 +661,7 @@ class model(object):
         
         properties=[(self.layers_E,'layers_E'),(self.layers_v,'layers_v'),
                     (self.layers_d,'layers_d'),(self.layers_c,'layers_c'),
-                    (self.layers_mu,'layers_mu'),(self.layers_coula,'layers_coula'),
+                    (self.layers_cfi,'layers_cfi'),(self.layers_coula,'layers_coula'),
                     (self.layers_T,'layers_T')]
         
         values=[self.layer_values(prop,name)[index] for prop,name in properties]
@@ -683,14 +698,14 @@ class model(object):
                     'E = '+str(self.layer_values(self.layers_E,'layers_E')[0]/1E9)+' GPa\n'+'v = '+str(self.layer_values(self.layers_v,'layers_v')[0])
                     +'\n'+r'$\rho$ = '+str(self.layer_values(self.layers_d,'layers_d')[0])+r' kg/m$^3$'
                     +'\n'+r'C$_o$ = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa'
-                    +'\n'+r'$\mu$ = '+str(self.layer_values(self.layers_mu,'layers_mu')[0]),
+                    +'\n'+r"$\mu'$ = "+str(self.layer_values(self.layers_cfi,'layers_cfi')[0]),
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',
                     transform=ax.transAxes,fontsize=14, zorder=5)
         
         else:
             i=0
-            for y,E,v,d,c,m in zip(self.y_position_layers[1:],self.layers_E, self.layers_v, self.layers_d, self.layers_c, self.layers_mu):
+            for y,E,v,d,c,m in zip(self.y_position_layers[1:],self.layers_E, self.layers_v, self.layers_d, self.layers_c, self.layers_cfi):
                 x=self.x_limits[-1]-0.05*points_distance((self.x_limits[0],0),(self.x_limits[-1],0))
                 y=y-0.05*points_distance((self.x_limits[-1],self.y_position_layers[i]),(self.x_limits[-1],y))
                 i=i+1
@@ -698,7 +713,7 @@ class model(object):
                         'E = '+str(E/1E9)+' GPa\n'+'v = '+str(v)+'\n'
                         +r'$\rho$ = '+str(d)+r' kg/m$^3$'
                         +'\n'+r'C$_o$ = '+str(c/1e6)+' MPa'
-                        +'\n'+r'$\mu$ = '+str(m),
+                        +'\n'+r"$\mu'$ = "+str(m),
                         bbox=dict(fc='white', ec='black'), 
                         horizontalalignment='right', verticalalignment='top', fontsize=11)
             
@@ -1216,7 +1231,7 @@ class model(object):
         Parameters
         ----------
         crack: a crack object,
-        planes: a bool. If True, plots the optimal shear planes defined by mu.
+        planes: a bool. If True, plots the optimal shear planes defined by cfi.
         If False, it does not do this. It must be a real boolean, not a str.
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
@@ -1226,7 +1241,7 @@ class model(object):
         Returns
         -------
         A figure plotting the trajectories of the principal stresses and
-        optionally the orientation of the optimal shear planes defined by mu.
+        optionally the orientation of the optimal shear planes defined by cfi.
         
         """
 
@@ -1235,7 +1250,7 @@ class model(object):
         
         grid=self.grid()
         x, y = grid[0], grid[1]
-        s, mu, coula = grid[5], grid[6], grid[7]
+        s, cfi, coula = grid[5], grid[6], grid[7]
         
         upper_tip=crack.up_tip() ; lower_tip=crack.low_tip()
         dpx=crack.x() ; dpy=crack.y()
@@ -1289,7 +1304,7 @@ class model(object):
         
         # ax.text(0.96,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa; '+r'$\sigma{^r_x}$ = '+str(round(s11/1e6,0))+' MPa\n'
         #         +r'$\alpha$ = '+str(angle)+'°; '+r'$\rho$ = '+str(self.layers_d)+' kg m$^{-3}$\n'
-        #         +r'$\mu$ = '+str(self.layers_mu)+'; '+r'$\theta_{opt}$ = '+str(np.round(90-np.degrees(self.layers_coula),2))+'°',
+        #         +r"$\mu'$ = "+str(self.layers_cfi)+'; '+r'$\theta_{opt}$ = '+str(np.round(90-np.degrees(self.layers_coula),2))+'°',
         #         bbox=dict(fc='white', ec='black'),
         #         horizontalalignment='right', verticalalignment='top',
         #         transform=ax.transAxes,fontsize=11, zorder=5)
@@ -1315,7 +1330,7 @@ class model(object):
         """
         grid=self.grid()
         x, y = grid[0], grid[1] 
-        s, mu, coula = grid[5], grid[6], grid[7]
+        s, cfi, coula = grid[5], grid[6], grid[7]
         
         
         ########### With the principal stresses ###########
@@ -1350,7 +1365,7 @@ class model(object):
         
         grid=self.grid()
         x, y = grid[0], grid[1]
-        s, mu, coula = grid[5], grid[6], grid[7]
+        s, cfi, coula = grid[5], grid[6], grid[7]
         
         upper_tip=crack.up_tip() ; lower_tip=crack.low_tip()
         dpx=crack.x() ; dpy=crack.y()
@@ -1397,7 +1412,7 @@ class model(object):
         if self.n_layers()==1:
             ax.text(0.97,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa ; '+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa\n'
                     +r'$\alpha$ = '+str(angle)+'° ; '+ r'$\rho$ = '+str(self.layer_values(self.layers_d,'layers_d')[0])+' kg m$^3$'
-                    +'\nC = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa ; '+r'$\mu$ = '+str(self.layer_values(self.layers_mu,'layers_mu')[0])+'; '
+                    +'\nC = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa ; '+r"$\mu'$ = "+str(self.layer_values(self.layers_cfi,'layers_cfi')[0])+'; '
                     +r'$\theta_{opt}$ = '+str(round(90-np.degrees(self.layer_values(self.layers_coula,'layers_coula')[0]),2))+'°',
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',
@@ -1405,7 +1420,7 @@ class model(object):
         else:
             ax.text(0.98,0.14,r'$\sigma_I$ = '+str(round(dpx/1E6,2))+' MPa\n'+r'$\sigma_{II}$ = '+str(round(dpy/1E6,2))+' MPa\n'
                     +r'$\alpha$ = '+str(angle)+'°'
-                    +'\nC = '+str(np.asarray(self.layers_c,dtype=float)/1e6)+' MPa ; '+r'$\mu$ = '+str(np.asarray(self.layers_mu,dtype=float))+'; '
+                    +'\nC = '+str(np.asarray(self.layers_c,dtype=float)/1e6)+' MPa ; '+r"$\mu'$ = "+str(np.asarray(self.layers_cfi,dtype=float))+'; '
                     +r'$\theta_{opt}$ = '+str(np.round(90-np.degrees(self.layers_coula),2))+'°',
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',

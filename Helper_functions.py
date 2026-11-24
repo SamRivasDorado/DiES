@@ -147,20 +147,14 @@ def power_law(x,C,m):
     'a list or tuple of X values, or a single int/float X value'
     'or a numpy array'
     
-    y=[]
+    # Lists and tuples are evaluated element by element and returned as an array;
+    # ints, floats (including numpy scalars) and numpy arrays directly.
+    # Until Nov 2026 the type checks were exact (type(x)==float), so numpy
+    # scalars such as np.float64 silently returned an empty list.
+    if isinstance(x,(list,tuple)):
+        return np.asarray([C*(value**m) for value in x])
     
-    #    Create case for input as numpy array
-    
-    if type (x)==list or type (x)==tuple:
-        for value in x:
-            y.append(C*(value**m))
-        y=np.asarray(y)
-            
-    elif type(x)==int or type(x)==float:
-        y=C*(x**m)
-    
-    elif 'ndarray' in str(type(x)):
-        y=C*(x**m)
+    y=C*(x**m)
     
     'Returns either a list of y values corresponding to the x values, if the input is a list or tuple'
     'or a single number if the input is an int or a float'
@@ -579,16 +573,20 @@ def get_topography_v2(header_skips, footer_skips, file):
     return all_profiles
 
 
-def faults_above_dike(grid, stress, crack):
+def faults_above_crack(grid, stress, crack):
     """
     Takes a model grid as a 2D-array,
-    the shear stresses produced by a dike as 
+    the shear stresses produced by a crack (e.g. a dike) as 
     calculated by the 'stresses' function,  
     and a crack object instance.
     
     Returns two 2-D arrays representing the coordinates of the 
-    faults at either side of the dike based on the points of 
-    maximum shear stress above the dike tip.
+    faults at either side of the crack based on the points of 
+    maximum shear stress above its upper tip.
+    
+    Written for the graben above the Martian dikes of the thesis
+    (Rivas-Dorado et al., 2023). Named faults_above_dike until Nov 2026;
+    that name is kept as an alias.
     """
     
     left_fault=[[],[]] ; right_fault=[[],[]]
@@ -626,7 +624,7 @@ def faults_above_dike(grid, stress, crack):
 
     return left_fault, right_fault       
 
-def compare_outputs_and_faults(delta,beta,grid,dike,fault1,fault_angle,elevation):
+def compare_outputs_and_faults(delta,beta,grid,crack,fault1,fault_angle,elevation):
     """
     
     Parameters
@@ -634,7 +632,7 @@ def compare_outputs_and_faults(delta,beta,grid,dike,fault1,fault_angle,elevation
     delta : 2D array, the delta values resulting from the evaluate_parameters method
     beta: 2D array, the beta values resulting from the evaluate_parameters method
     grid : the grid of the inspected model
-    dike : the dike object inspected
+    crack : the crack object inspected (a dike, in the thesis)
     fault1 : a tuple of tuples, containing the x,y values of the upper and lower
     fault_angle: a float/int indicating the fault angle in degrees
     fault tips for the left fault, as in ((x1,y1)(x2,y2))
@@ -642,6 +640,12 @@ def compare_outputs_and_faults(delta,beta,grid,dike,fault1,fault_angle,elevation
     Only valid for vertical dikes opened exclusively by magma pressure
     with no shearing components. This is because this function assumes 
     symetry on the delta values between both sides of the dike.
+    
+    Thesis function (Rivas-Dorado et al., 2023). Until Nov 2026 it read
+    dike.upper_tip and dike.center, which the crack class does not have
+    (they are the methods up_tip() and c()). The beta angles it expects
+    come from an earlier version of the code: check their convention
+    against docs/crack_coordinates_and_rotation.md, Section 10, before use.
     
     Returns
     -------
@@ -656,20 +660,20 @@ def compare_outputs_and_faults(delta,beta,grid,dike,fault1,fault_angle,elevation
     """
     
     # Identifying the position of the horizontal section to investigate
-    investigation_depth=dike.upper_tip[1]+elevation
+    investigation_depth=crack.up_tip()[1]+elevation
 
     i=0
     while grid[1][i][0]<=investigation_depth:
         i=i+1
     
     # Getting the maximum delta value at that elevation, in P
-    # for the delta values left of the dike center, its position along the x axis
+    # for the delta values left of the crack center, its position along the x axis
     # and the angle of the optimal shearing plane relative to the vertical
         
     new_delta=[] ; row_x=[] ; row_beta=[]
     
     for d,x,b in zip(delta[i],grid[0][0],beta[i]):
-        if x<dike.center[0]:
+        if x<crack.c()[0]:
             new_delta.append(d)
             row_x.append(x)
             row_beta.append(b)
@@ -700,6 +704,9 @@ def compare_outputs_and_faults(delta,beta,grid,dike,fault1,fault_angle,elevation
 
     return investigation_depth, x_delta, x_fault_value_at_id, max_delta, opt_beta, d, D
 
+
+# Former name of faults_above_crack, kept for the thesis scripts
+faults_above_dike=faults_above_crack
 
 def point_side_of_line(A, B, P):
     """

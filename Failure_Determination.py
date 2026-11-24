@@ -15,14 +15,14 @@ from Helper_functions import angle_between_lines
 # Error class shared with the core
 from DiES_core import InputError
 
-def evaluate_stress_state(p,s,mu,T,output):
+def evaluate_stress_state(p,s,cfi,T,output):
     """
     
     Parameters
     ----------
     p : int/float, the maximum compressive principal stress in Pa (p > s)
     s : int/float, the minimum compressive principal stress in Pa
-    mu : int/float, coefficient of internal friction (unitless)
+    cfi : int/float, coefficient of internal friction (unitless)
     T : negative int/float, tensile strength in Pa. The Mohr diagram uses the
         compression-positive convention, so tension plots on the negative
         side of the normal-stress axis and T must always be < 0 (e.g. -1.5e6).
@@ -46,28 +46,45 @@ def evaluate_stress_state(p,s,mu,T,output):
         'Mode II - tension-compression': shear failure, with sigma_n > 0
         'Mixed-mode I-II': shear failure, with sigma_n < 0
         'Mode II - compression': shear failure under compression only
+        'Singular': p or s is not finite (NaN/inf), e.g. at a node lying
+                    exactly on a crack tip, where the elastic solution is singular.
+                    The values are NaN and no failure plane is defined.
+    For an isotropic state (p == s) the Mohr circle is a point: it is 'Below'
+    if p > T and 'Above' if p <= T (isotropic tension beyond the tensile
+    strength), with NaN values, since no failure plane is defined.
+    p < s, or a non-negative T, raise InputError.
 
     """
-    
-    if p<s:
-        print('p is set as the principal stress but is smaller than s.')
-        print('Please review the values and set p>s.')
-        sys.exit()
-    
-    elif p==s:
-        print ('p = s and thus the state of stress is isotropic.')
-        print ('A Mohr circle cannot be drawn in this situation.')
-        sys.exit()
-        
-    # elif p<0 and s<0:
-    #     print ('This is a biaxial tension situation.')
-    #     print ('This algorithm is not suited to evaluate this scenario.')
-    #     print ('Please revise your values and try again.')
     
     # T must be negative: it is the tensile strength on the compression-positive
     # normal-stress axis of the Mohr diagram
     if not T<0:
         raise InputError('T must be negative (tension is negative on the Mohr diagram), got '+str(T)+' Pa')
+    
+    # Until Nov 2026, p < s and p == s printed a message and called sys.exit(),
+    # which would stop a whole model (or an application) because of a single node.
+    
+    # Non-finite stresses: a node on a crack tip, where the solution is singular
+    if not (np.isfinite(p) and np.isfinite(s)):
+        if output=='values':
+            return float('NaN'), float('NaN'), float('NaN'), 'Singular'
+        raise InputError('Cannot draw a Mohr circle with non-finite stresses (p = '+str(p)+', s = '+str(s)+')')
+    
+    if p<s:
+        raise InputError('p must be the maximum compressive principal stress, but p = '
+                         +str(p)+' Pa < s = '+str(s)+' Pa')
+    
+    # Isotropic state: the Mohr circle is a single point on the normal-stress axis
+    if p==s:
+        if output=='values':
+            mode='Below' if p>T else 'Above'
+            return float('NaN'), float('NaN'), float('NaN'), mode
+        raise InputError('p = s: the state of stress is isotropic and its Mohr circle is a point')
+        
+    # elif p<0 and s<0:
+    #     print ('This is a biaxial tension situation.')
+    #     print ('This algorithm is not suited to evaluate this scenario.')
+    #     print ('Please revise your values and try again.')
     
     # Redefining the inputs to MPa. T keeps its sign: everything below
     # (x<T, the parabola vertex at T, the Coulomb intercept -2T) is written for T<0.
@@ -82,7 +99,7 @@ def evaluate_stress_state(p,s,mu,T,output):
     circle_points = np.linspace(s,p,int(r)*50)
     
     # Calculating the slope and intercept of the Mohr-Coulomb failure line
-    slope_l = mu ; intercept_l = -2*T
+    slope_l = cfi ; intercept_l = -2*T
     
     temp_sn=[] ; temp_ss=[] ; temp_angle=[]
         
@@ -258,7 +275,7 @@ def evaluate_stress_state(p,s,mu,T,output):
             # failure line
             elif x>0:
                 y_circle = circle_eq_y(x_center, r, x)[0]            
-                y_line=-2*T+mu*x
+                y_line=-2*T+cfi*x
                 
                 if y_line==0:
                     y_line=0.001
@@ -333,14 +350,14 @@ def evaluate_stress_state(p,s,mu,T,output):
         y_values = -(abs(4*T*(x_values_G-T)))**0.5 
         ax.plot(x_values_G,y_values,ls='--',lw=3,c='darkred')
         
-        y_values = -2*T + mu*x_values_MC
+        y_values = -2*T + cfi*x_values_MC
         ax.plot(x_values_MC,y_values,ls='--',lw=3,c='tomato')
         
-        y_values = -2*T + mu*x_values_MC
+        y_values = -2*T + cfi*x_values_MC
         ax.plot(x_values_MC,-y_values,ls='--',lw=3,c='tomato')
         
         # Cutoff line for the Mohr-Coulomb criterion under uniaxial tension
-        # ax.vlines(T,0,-2*T + mu*T,ls=':',color='red')
+        # ax.vlines(T,0,-2*T + cfi*T,ls=':',color='red')
         
          # Plotting the contact point only if there is any kind of failure
         if i==1:
