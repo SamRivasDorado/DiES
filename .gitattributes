@@ -1,0 +1,11 @@
+# Line endings: LF in the repository and in every working copy (since 24 Nov 2026;
+# until then all files were CRLF)
+* text=auto eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+# Binary files
+*.png binary
+*.pdf binary
+*.npz binary
