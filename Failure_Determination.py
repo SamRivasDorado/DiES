@@ -37,7 +37,8 @@ def evaluate_stress_state(p,s,cfi,T,output):
     Returns
     -------
     If output = 'plot', returns a Mohr circle plot of the given stress state
-    and the Griffith and Coulomb criteria.
+    and the Griffith and Coulomb criteria (drawn by plotting.plot_mohr_circle
+    since Nov 2026).
     If output = 'values', returns a tuple with the normal stress, shear stress,
     failure angle (2theta), and the failure mode, as a str:
         'Below': the circle is below failure
@@ -85,6 +86,15 @@ def evaluate_stress_state(p,s,cfi,T,output):
     #     print ('This is a biaxial tension situation.')
     #     print ('This algorithm is not suited to evaluate this scenario.')
     #     print ('Please revise your values and try again.')
+    
+    if output not in ('values','plot'):
+        raise InputError("output must be 'values' or 'plot', got "+repr(output))
+    
+    # Since Nov 2026 (Phase 1) the Mohr diagram is drawn by plotting.plot_mohr_circle,
+    # which takes the values from this function. Imported here to avoid a circular import.
+    if output=='plot':
+        import plotting
+        return plotting.plot_mohr_circle(p,s,cfi,T)
     
     # Redefining the inputs to MPa. T keeps its sign: everything below
     # (x<T, the parabola vertex at T, the Coulomb intercept -2T) is written for T<0.
@@ -307,82 +317,7 @@ def evaluate_stress_state(p,s,cfi,T,output):
             # print ('The circle is above failure')
             sn=float('NaN'); ss=float('NaN') ; angle=float('NaN'); mode='Above'
                     
-    if output=='plot':
-        # Create some variables for plotting
-        x_boundaries=np.asarray((x_center-r*2,x_center+r*2))
-        y_boundaries=np.asarray((r*1,-r*2))
-        x_values_G = np.linspace(T,0,200)
-        x_values_MC = np.linspace(0,x_boundaries[1],200)
-        
-        # Plot some axis elements
-        figure=plt.figure(figsize=(5,4))
-        ax=figure.add_subplot(111,xlim=x_boundaries,ylim=-y_boundaries)
-        ax.set_ylabel(r'$\sigma_s$ (MPa)')
-        ax.set_xlabel(r'$\sigma_n$ (MPa)') 
-        ax.hlines(0,x_boundaries[0],x_boundaries[1], color='black',lw=0.5)
-        ax.vlines(0,y_boundaries[0]*2,y_boundaries[1], color='black',lw=0.5)
-        
-        # Plotting the Mohr Circle and its defining parameters
-        if mode=='Below' or mode=='Above':
-            color='black'
-        
-        elif mode=='Mode II - compression':
-            color='red'
-        
-        elif mode=='Mode II - tension-compression':
-            color='purple'
-        
-        elif mode=='Mixed-mode I-II':
-            color='dodgerblue'
-            
-        elif mode=='Mode I':
-            color='blue'
-        
-        ax.plot(circle_points,circle_eq_y(x_center,r,circle_points)[0],lw=3,c=color, zorder=3)
-        ax.scatter(x_center,0,c='black', s=30)
-        ax.scatter(p,0, lw=0.5, edgecolor='black', c=color, s=70, zorder=3)
-        ax.scatter(s,0, lw=0.5, edgecolor='black', c=color, s=70, zorder=3)
-                    
-        # Plotting the modified Griffith criterionn
-        y_values = (abs(4*T*(x_values_G-T)))**0.5 
-        ax.plot(x_values_G,y_values,ls='--',lw=3,c='darkred')
-        
-        y_values = -(abs(4*T*(x_values_G-T)))**0.5 
-        ax.plot(x_values_G,y_values,ls='--',lw=3,c='darkred')
-        
-        y_values = -2*T + cfi*x_values_MC
-        ax.plot(x_values_MC,y_values,ls='--',lw=3,c='tomato')
-        
-        y_values = -2*T + cfi*x_values_MC
-        ax.plot(x_values_MC,-y_values,ls='--',lw=3,c='tomato')
-        
-        # Cutoff line for the Mohr-Coulomb criterion under uniaxial tension
-        # ax.vlines(T,0,-2*T + cfi*T,ls=':',color='red')
-        
-         # Plotting the contact point only if there is any kind of failure
-        if i==1:
-            ax.scatter(sn,ss,marker='*',edgecolor='black', c='orange', s=200, zorder=3)   
-            ax.plot((x_center,sn),(0,ss), ls='--', lw=1.5, c='black')
-            ax.text(sn+r,ss+r*1,r'2$\theta$ = '+str(round(angle,2)),bbox=dict(fc='white', ec='black'), fontsize=12)
-            # +' °\n'
-                    # +r'$\theta$ = '+str(round(angle/2,2))+' °')
-            
-            # Plotting the tangent lines
-            # x_values=np.linspace(-r*4,r*4,100)
-            # ax.plot(x_values,circle_tangent_params[0][0]*x_values+circle_tangent_params[0][-1],c='grey',lw=1)
-            
-            # if s<0:
-            #     ax.plot(x_values,parabole_tangent_params[0][0]*x_values+parabole_tangent_params[0][-1],c='indianred',lw=1)
-            # elif s>=0:
-            #     ax.plot(x_values,line_tangent_params[0][0]*x_values+line_tangent_params[0][-1],c='indianred',lw=1)
-                
-        ax.text(p-r/6,0-r/1,r'$\sigma_1$ = '+str(round(p,2))+' MPa',bbox=dict(fc='white', ec='black'), fontsize=12)
-        ax.text(s-r/0.5,0-r/1,r'$\sigma_3$ = '+str(round(s,2))+' MPa',bbox=dict(fc='white', ec='black'), fontsize=12)
-        
-        return figure
-        
-    elif output=='values':
-        return sn, ss, angle, mode
+    return sn, ss, angle, mode
 
 
 def failure_plane_orientation(s1a,theta,mode,side):

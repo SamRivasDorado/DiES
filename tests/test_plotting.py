@@ -123,6 +123,29 @@ def test_figures_from_saved_results():
                           pixels(plotting.plot_plane_stresses(back, 'normal', 60, 5)))
 
 
+
+def test_mohr_circle():
+    from Failure_Determination import evaluate_stress_state
+    T = -1.5e6
+    # Below, Above, Mode I, Mixed-mode I-II, Mode II tension-compression, Mode II compression
+    for p, s in ((5.4e6, 1.8e6), (5e6, -1.6e6), (4e6, -1.48e6), (5.71e6, -1.45e6), (9.68e6, -0.2e6), (13.5e6, 1.2e6)):
+        assert np.array_equal(pixels(evaluate_stress_state(p, s, CFI, T, 'plot')),
+                              pixels(plotting.plot_mohr_circle(p, s, CFI, T))), (p, s)
+    for call in (lambda: evaluate_stress_state(5e6, 1e6, CFI, T, 'figure'),
+                 lambda: evaluate_stress_state(5e6, 5e6, CFI, T, 'plot')):
+        try:
+            call()
+        except InputError:
+            continue
+        raise AssertionError('no InputError')
+    try:
+        plotting.plot_mohr_circle(float('nan'), 1e6, CFI, T)
+    except plotting.PlotError:
+        pass
+    else:
+        raise AssertionError('no PlotError for a singular state')
+
+
 if __name__ == '__main__':
     tests = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     for test in tests:

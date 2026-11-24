@@ -370,3 +370,70 @@ def plot_dynamic_step(step, downscaling):
             horizontalalignment='right', verticalalignment='top',
             transform=ax.transAxes, fontsize=11, zorder=5)
     return figure
+
+
+def plot_mohr_circle(p, s, cfi, T):
+    """
+    Mohr circle of a stress state with the modified Griffith (parabola) and
+    Coulomb (line) criteria, and the point of failure if there is one
+    (the drawing code formerly inside evaluate_stress_state, moved unchanged
+    in Nov 2026). The values come from evaluate_stress_state(..., 'values').
+    
+    p, s: maximum and minimum compressive principal stresses, in Pa (p > s),
+    cfi: coefficient of internal friction, T: tensile strength in Pa (< 0).
+    The diagram is drawn in MPa, compression positive.
+    """
+    # Imported here: Failure_Determination imports DiES_core, which imports this module
+    from Failure_Determination import evaluate_stress_state
+    from Helper_functions import circle_eq_y
+    
+    sn, ss, angle, mode = evaluate_stress_state(p, s, cfi, T, 'values')
+    if mode == 'Singular' or p == s:
+        raise PlotError('Cannot draw a Mohr circle for this state (mode ' + mode + ', p = ' + str(p) + ', s = ' + str(s) + ')')
+    
+    p = p/1e6 ; s = s/1e6 ; T = T/1e6
+    r = abs(p - s)/2 ; x_center = p - (p - s)/2
+    circle_points = np.linspace(s, p, int(r)*50)
+    
+    # Variables for plotting
+    x_boundaries = np.asarray((x_center - r*2, x_center + r*2))
+    y_boundaries = np.asarray((r*1, -r*2))
+    x_values_G = np.linspace(T, 0, 200)
+    x_values_MC = np.linspace(0, x_boundaries[1], 200)
+    
+    # Axis elements
+    figure = plt.figure(figsize=(5, 4))
+    ax = figure.add_subplot(111, xlim=x_boundaries, ylim=-y_boundaries)
+    ax.set_ylabel(r'$\sigma_s$ (MPa)')
+    ax.set_xlabel(r'$\sigma_n$ (MPa)')
+    ax.hlines(0, x_boundaries[0], x_boundaries[1], color='black', lw=0.5)
+    ax.vlines(0, y_boundaries[0]*2, y_boundaries[1], color='black', lw=0.5)
+    
+    # The Mohr circle and its defining parameters, coloured by failure mode
+    color = {'Below': 'black', 'Above': 'black', 'Mode II - compression': 'red',
+             'Mode II - tension-compression': 'purple', 'Mixed-mode I-II': 'dodgerblue',
+             'Mode I': 'blue'}[mode]
+    ax.plot(circle_points, circle_eq_y(x_center, r, circle_points)[0], lw=3, c=color, zorder=3)
+    ax.scatter(x_center, 0, c='black', s=30)
+    ax.scatter(p, 0, lw=0.5, edgecolor='black', c=color, s=70, zorder=3)
+    ax.scatter(s, 0, lw=0.5, edgecolor='black', c=color, s=70, zorder=3)
+    
+    # The modified Griffith criterion and the Coulomb line
+    y_values = (abs(4*T*(x_values_G - T)))**0.5
+    ax.plot(x_values_G, y_values, ls='--', lw=3, c='darkred')
+    y_values = -(abs(4*T*(x_values_G - T)))**0.5
+    ax.plot(x_values_G, y_values, ls='--', lw=3, c='darkred')
+    y_values = -2*T + cfi*x_values_MC
+    ax.plot(x_values_MC, y_values, ls='--', lw=3, c='tomato')
+    y_values = -2*T + cfi*x_values_MC
+    ax.plot(x_values_MC, -y_values, ls='--', lw=3, c='tomato')
+    
+    # The contact point, only if there is any kind of failure
+    if mode not in ('Below', 'Above'):
+        ax.scatter(sn, ss, marker='*', edgecolor='black', c='orange', s=200, zorder=3)
+        ax.plot((x_center, sn), (0, ss), ls='--', lw=1.5, c='black')
+        ax.text(sn + r, ss + r*1, r'2$\theta$ = ' + str(round(angle, 2)), bbox=dict(fc='white', ec='black'), fontsize=12)
+    
+    ax.text(p - r/6, 0 - r/1, r'$\sigma_1$ = ' + str(round(p, 2)) + ' MPa', bbox=dict(fc='white', ec='black'), fontsize=12)
+    ax.text(s - r/0.5, 0 - r/1, r'$\sigma_3$ = ' + str(round(s, 2)) + ' MPa', bbox=dict(fc='white', ec='black'), fontsize=12)
+    return figure
