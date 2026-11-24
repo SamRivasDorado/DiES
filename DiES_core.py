@@ -13,6 +13,9 @@ from Helper_functions import points_distance
 from Helper_functions import linear
 from Helper_functions import boundaries_contours
 
+# Container of the computed fields (Phase 1, Nov 2026)
+from results import DiESResults
+
 ########################### Defining standard parameters ########################### 
 
 # plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
@@ -408,6 +411,62 @@ def stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,nu,E,upper_tip,crack_center,lower_t
 
 ########################### Model class ###########################
 
+########################### Principal stresses and stresses on the optimal planes ###########################
+
+def principal_from_stresses(sxx,syy,sxy):
+    """
+    Principal stresses and their orientations from the in-plane stress
+    components (Phase 1, Nov 2026: extracted from model.principal_stresses so
+    that they can be computed from stresses that are already available).
+    
+    Parameters
+    ----------
+    sxx, syy, sxy: floats or arrays, in Pa, TENSION positive (as returned by
+    model.model_stresses and stresses()).
+    
+    Returns
+    -------
+    s1, s3: maximum and minimum compressive principal stresses, in Pa,
+    COMPRESSION positive.
+    s1a, s3a: orientations of sigma1 and sigma3, in degrees counterclockwise
+    from +x, in (-90, 90]. See docs/crack_coordinates_and_rotation.md, Section 10.
+    """
+    # Compression positive
+    sxx=-np.asarray(sxx) ; syy=-np.asarray(syy) ; sxy=-np.asarray(sxy)
+                            
+    s1=(0.5*(sxx+syy)+(((sxx-syy)*0.5)**2+sxy**2)**0.5)
+    s3=(0.5*(sxx+syy)-(((sxx-syy)*0.5)**2+sxy**2)**0.5)
+    
+    # Orientation of sigma1 (Jaeger et al., 2007): tan(2a) = 2sxy/(sxx-syy).
+    # arctan2 picks the quadrant of 2a from the signs of sxy and sxx-syy,
+    # so a is the direction of the MAXIMUM compressive stress, in (-90, 90],
+    # with no division by zero. For example, with sxy = 0 and sxx < syy
+    # (vertical sigma1, as in the lithostatic state) it gives 90.
+    #
+    # Until Nov 2026 the angle was arctan(2sxy/((sxx-syy)+R)), where the
+    # denominator was replaced by 0.001 when it was 0: that returned 0
+    # (horizontal) instead of 90 wherever sigma1 was vertical and sxy = 0.
+    # The whole grid was also forced to 90 when dpx = 0 and s11 = 0, which
+    # ignored faults loaded only in shear.
+    s1a=np.degrees(0.5*np.arctan2(2*sxy,sxx-syy))
+    s1a=np.where(s1a<=-90,s1a+180,s1a)
+    
+    # sigma3 is normal to sigma1, also in (-90, 90]
+    s3a=np.where(s1a>0,s1a-90,s1a+90)
+    
+    return s1, s3, s1a, s3a
+
+def optimal_plane_stresses(s1,s3,coula):
+    """
+    Normal and shear stresses on the optimal shear planes, which lie at coula
+    (radians) from sigma1 (Pollard and Martel, 2020). s1 and s3 compression
+    positive, in Pa. Returns sn, ss, in Pa, compression positive.
+    """
+    sn=0.5*(s1+s3)+0.5*(s1-s3)*np.cos(2*coula)
+    ss=0.5*(s1-s3)*np.sin(2*coula)
+    
+    return sn, ss
+
 class crack(object):
     def __init__(self, upper_tip, lower_tip, dpx, dpy, dpz):
         """
@@ -680,6 +739,67 @@ class model(object):
         y_cells=len(grid[1].transpose()[0])
         
         return (str(x_cells)+' x '+str(y_cells)+' = '+str(x_cells*y_cells)+' cells'), x_cells*y_cells
+    
+    def metadata(self, crack=None, rxx=0, ryy=0, litho=None):
+        """
+        Description of the model (and optionally of the crack and the loading)
+        as a JSON-serialisable dict, stored with the results.
+        """
+        def as_list(values):
+            return np.atleast_1d(np.asarray(values,dtype=float)).tolist()
+        
+        info={'x_limits':as_list(self.x_limits), 'y_limits':as_list(self.y_limits),
+              'x_cellsize':float(self.x_cellsize), 'y_cellsize':float(self.y_cellsize),
+              'n_layers':self.n_layers(), 'y_position_layers':as_list(self.y_position_layers),
+              'layers_E':as_list(self.layers_E), 'layers_v':as_list(self.layers_v),
+              'layers_d':as_list(self.layers_d), 'layers_c':as_list(self.layers_c),
+              'layers_cfi':as_list(self.layers_cfi), 'layers_coula':as_list(self.layers_coula),
+              'layers_T':as_list(self.layers_T), 'g':float(self.g)}
+        if crack is not None:
+            info['crack']={'upper_tip':as_list(crack.up_tip()), 'lower_tip':as_list(crack.low_tip()),
+                           'center':as_list(crack.c()), 'length':float(crack.extent()),
+                           'dpx':float(crack.x()), 'dpy':float(crack.y()), 'dpz':float(crack.z())}
+            info['remote']={'rxx':as_list(rxx), 'ryy':as_list(ryy)}
+            info['litho']=litho
+        return info
+    
+    def compute(self, crack, rxx=0, ryy=0, litho=True, displacements=True, stresses=True):
+        """
+        Computes every field of the model for a crack, once (Phase 1, Nov 2026).
+        
+        Parameters
+        ----------
+        crack: a crack object,
+        rxx, ryy: remote stresses normal to the x and y planes, in Pa (floats,
+        or arrays with the shape of the grid). Both may be 0.
+        litho: a bool. If True, the lithostatic stresses are included.
+        displacements, stresses: bools, to compute only part of the fields
+        (e.g. displacements=True, stresses=False for a displacement figure).
+        
+        Returns
+        -------
+        A DiESResults object (results.py) with the material at each node
+        (E, nu, density, cohesion, cfi, coula, T) and, as requested,
+        ux, uy, uz; sxx, syy, sav, sxy, sxz, szz, tmax (tension positive);
+        s1, s3, s1a, s3a and sn, ss (compression positive).
+        The values are the same as those of model_displacements,
+        model_stresses, principal_stresses and plane_stresses.
+        """
+        litho=require_bool(litho,'litho')
+        grid=self.grid()
+        fields={'E':grid[2], 'nu':grid[3], 'density':grid[4], 'cohesion':grid[5],
+                'cfi':grid[6], 'coula':grid[7], 'T':grid[8]}
+        
+        if displacements:
+            fields['ux'], fields['uy'], fields['uz'] = self.model_displacements(crack)
+        
+        if stresses:
+            sxx, syy, sav, sxy, sxz, szz, tmax = self.model_stresses(crack, rxx, ryy, litho)
+            fields.update({'sxx':sxx, 'syy':syy, 'sav':sav, 'sxy':sxy, 'sxz':sxz, 'szz':szz, 'tmax':tmax})
+            fields['s1'], fields['s3'], fields['s1a'], fields['s3a'] = principal_from_stresses(sxx,syy,sxy)
+            fields['sn'], fields['ss'] = optimal_plane_stresses(fields['s1'],fields['s3'],grid[7])
+        
+        return DiESResults(grid[0], grid[1], fields, self.metadata(crack, rxx, ryy, litho))
     
     def show_properties(self):
         """
@@ -1116,30 +1236,8 @@ class model(object):
         
         s=self.model_stresses(crack, s11, s22, boolean)
         
-        # Compression positive
-        sxx=-s[0] ; syy=-s[1] ; sxy=-s[3]
-                                
-        s1=(0.5*(sxx+syy)+(((sxx-syy)*0.5)**2+sxy**2)**0.5)
-        s3=(0.5*(sxx+syy)-(((sxx-syy)*0.5)**2+sxy**2)**0.5)
-        
-        # Orientation of sigma1 (Jaeger et al., 2007): tan(2a) = 2sxy/(sxx-syy).
-        # arctan2 picks the quadrant of 2a from the signs of sxy and sxx-syy,
-        # so a is the direction of the MAXIMUM compressive stress, in (-90, 90],
-        # with no division by zero. For example, with sxy = 0 and sxx < syy
-        # (vertical sigma1, as in the lithostatic state) it gives 90.
-        #
-        # Until Nov 2026 the angle was arctan(2sxy/((sxx-syy)+R)), where the
-        # denominator was replaced by 0.001 when it was 0: that returned 0
-        # (horizontal) instead of 90 wherever sigma1 was vertical and sxy = 0.
-        # The whole grid was also forced to 90 when dpx = 0 and s11 = 0, which
-        # ignored faults loaded only in shear.
-        s1a=np.degrees(0.5*np.arctan2(2*sxy,sxx-syy))
-        s1a=np.where(s1a<=-90,s1a+180,s1a)
-        
-        # sigma3 is normal to sigma1, also in (-90, 90]
-        s3a=np.where(s1a>0,s1a-90,s1a+90)
-        
-        return s1, s3, s1a, s3a
+        # sxx, syy and sxy, tension positive (sxy is the 4th output of model_stresses)
+        return principal_from_stresses(s[0],s[1],s[3])
     
     def plot_principal_stresses(self, crack, stress, s11, s22, boolean, step):
         """
@@ -1338,11 +1436,7 @@ class model(object):
         s1=s[0] ; s3=s[1]
         
         # Pollard and Martel, 2020
-
-        sn=0.5*(s1+s3)+0.5*(s1-s3)*np.cos(2*coula)
-        ss=0.5*(s1-s3)*np.sin(2*coula)
-
-        return sn, ss
+        return optimal_plane_stresses(s1,s3,coula)
     
     
     def plot_plane_stresses(self, crack, stress, s11, s22, angle, boolean, step):
