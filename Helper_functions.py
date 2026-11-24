@@ -641,11 +641,18 @@ def compare_outputs_and_faults(delta,beta,grid,crack,fault1,fault_angle,elevatio
     with no shearing components. This is because this function assumes 
     symetry on the delta values between both sides of the dike.
     
-    Thesis function (Rivas-Dorado et al., 2023). Until Nov 2026 it read
-    dike.upper_tip and dike.center, which the crack class does not have
-    (they are the methods up_tip() and c()). The beta angles it expects
-    come from an earlier version of the code: check their convention
-    against docs/crack_coordinates_and_rotation.md, Section 10, before use.
+    Thesis function (Rivas-Dorado et al., 2023), not called anywhere in DiES.
+    Notes for its use (24 Nov 2026):
+    - delta and beta come from an 'evaluate_parameters' method that is no
+      longer in the code (neither in main nor in this branch), so they have to
+      be computed separately.
+    - opt_beta = 90 - degrees(beta) assumes the angle convention of that older
+      code; check it against docs/crack_coordinates_and_rotation.md, Section 10
+      (orientations counterclockwise from +x since 24 Nov 2026), before use.
+    - Only the left side of the crack (x < center) is inspected, and the row
+      used is the first one strictly above investigation_depth.
+    It reads the crack tip and center with up_tip() and c(), equivalent to the
+    upper_tip and center attributes it used before (both exist in the class).
     
     Returns
     -------

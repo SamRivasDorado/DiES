@@ -47,8 +47,10 @@ RESOLUTION = [100, 100]
 CASES = {
     'dike': ('Vertical dike, opening only (a = 2 m)',
              [2, 0, -1000, 0, -5000], 0, 0, 0),
-    'fault': ('Fault dipping 60°, pure shear (σII = 5 MPa)',
-              [0, -500, -1000, 500, -1000 - 1000*np.tan(np.radians(60))], 0, 5e6, 0),
+    # sigma_II raised from 5 to 15 MPa on 24 Nov 2026: with 5 MPa the fault barely
+    # generated discontinuities in dynamic_model
+    'fault': ('Fault dipping 60°, pure shear (σII = 15 MPa)',
+              [0, -500, -1000, 500, -1000 - 1000*np.tan(np.radians(60))], 0, 15e6, 0),
 }
 
 
