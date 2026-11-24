@@ -1,0 +1,8 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Outputs of tests/visual_check.py and tests/plot_gallery.py
+visual_check/
+gallery/
