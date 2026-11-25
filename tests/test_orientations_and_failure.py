@@ -116,6 +116,37 @@ def test_tensile_strength_sign():
     raise AssertionError('no InputError for T > 0')
 
 
+
+def test_arrays_match_scalar_calls():
+    """evaluate_stress_state and failure_plane_orientation with arrays (Phase 2, point 3A)
+    give, node by node, the same values as the scalar calls, bit by bit."""
+    rng = np.random.default_rng(0)
+    # States from tension to compression, with p >= s; some isotropic, some singular
+    a, b = rng.uniform(-3e6, 25e6, (2, 12, 9))
+    p, s = np.maximum(a, b), np.minimum(a, b)
+    p[0, 0] = s[0, 0] = 4e6
+    p[0, 1] = np.nan
+    # cfi and T per node, as in a grid with layers
+    cfi = np.where(np.arange(12)[:, None] < 6, 0.57, 0.6) * np.ones((12, 9))
+    t = np.where(np.arange(12)[:, None] < 6, -1.5e6, -2e6) * np.ones((12, 9))
+    sn, ss, two_theta, mode = evaluate_stress_state(p, s, cfi, t, 'values')
+    assert sn.shape == ss.shape == two_theta.shape == mode.shape == p.shape
+    for idx in np.ndindex(p.shape):
+        ref = evaluate_stress_state(p[idx], s[idx], cfi[idx], t[idx], 'values')
+        assert mode[idx] == ref[3], idx
+        for value, expected in zip((sn[idx], ss[idx], two_theta[idx]), ref[:3]):
+            assert np.array_equal(value, expected, equal_nan=True), idx
+    # Failure planes: every mode, both sides, ties between the two conjugates (s1a = 45)
+    modes = ['Mode I', 'Mixed-mode I-II', 'Mode II - tension-compression',
+             'Mode II - compression', 'Below', 'Above', 'Singular']
+    s1a, theta, m, side = np.meshgrid(np.arange(-90, 90.1, 7.5), [45.0, 60.0, 72.5, 90.0, np.nan],
+                                      modes, [-1, 1], indexing='ij')
+    planes = failure_plane_orientation(s1a, theta, m, side)
+    for idx in np.ndindex(s1a.shape):
+        expected = failure_plane_orientation(s1a[idx], theta[idx], m[idx], side[idx])
+        assert np.array_equal(planes[idx], expected, equal_nan=True), (idx, planes[idx], expected)
+
+
 if __name__ == '__main__':
     tests = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     for test in tests:

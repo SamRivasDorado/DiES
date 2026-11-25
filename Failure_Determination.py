@@ -55,7 +55,19 @@ def evaluate_stress_state(p,s,cfi,T,output):
     strength), with NaN values, since no failure plane is defined.
     p < s, or a non-negative T, raise InputError.
 
+    Arrays (since Nov 2026, Phase 2): with output = 'values', p, s, cfi and T
+    may be arrays (or a mix of arrays and numbers, broadcast together, e.g. the
+    stresses of a grid and the cfi and T of each node). The result is then four
+    arrays of that shape: sn, ss and 2theta (float, NaN where there is no
+    failure) and the mode (str), node by node identical to the scalar call.
+    See evaluate_stress_states.
+
     """
+    
+    # Arrays (Phase 2, point 3A, Nov 2026): one call evaluates every node of a
+    # grid and returns arrays of the same shape (see evaluate_stress_states)
+    if output=='values' and any(np.ndim(v)>0 for v in (p,s,cfi,T)):
+        return evaluate_stress_states(p,s,cfi,T)
     
     # T must be negative: it is the tensile strength on the compression-positive
     # normal-stress axis of the Mohr diagram
@@ -320,6 +332,52 @@ def evaluate_stress_state(p,s,cfi,T,output):
     return sn, ss, angle, mode
 
 
+def evaluate_stress_states(p,s,cfi,T):
+    """
+    evaluate_stress_state for arrays: evaluates the Griffith-Coulomb criterion
+    at every node of a grid in one call (Phase 2, point 3A, Nov 2026).
+
+    Parameters
+    ----------
+    p, s : arrays (or numbers) of the maximum and minimum compressive principal
+           stresses in Pa, p >= s at every node
+    cfi : array or number, coefficient of internal friction of each node
+    T : array or number, tensile strength of each node in Pa (negative)
+    All are broadcast together to a common shape.
+
+    Returns
+    -------
+    sn, ss : float arrays, normal and shear stress on the failure plane (MPa)
+    two_theta : float array, the failure angle 2theta (degrees)
+    mode : str array, the failure mode of each node (see evaluate_stress_state)
+    sn, ss and two_theta are NaN where there is no failure.
+
+    The failure criterion is still evaluated node by node, with the same
+    sampling algorithm as evaluate_stress_state, so the results are identical
+    to calling it at each node. Point 3B of Phase 2 replaces this loop with the
+    analytical tangency conditions.
+    Errors of a node (InputError for p < s or T >= 0) stop the whole call, as
+    they did inside the loops of compute_dynamic_model.
+    """
+    # Common shape of the inputs (e.g. a grid with one cfi and T per node)
+    p,s,cfi,T=np.broadcast_arrays(np.asarray(p,dtype=float),np.asarray(s,dtype=float),
+                                  np.asarray(cfi,dtype=float),np.asarray(T,dtype=float))
+    shape=p.shape
+    
+    sn=np.full(shape,np.nan) ; ss=np.full(shape,np.nan) ; two_theta=np.full(shape,np.nan)
+    modes=[]
+    
+    # Node by node, in row-major order (the order of the former loops)
+    for idx in np.ndindex(shape):
+        sn[idx], ss[idx], two_theta[idx], mode = evaluate_stress_state(p[idx],s[idx],cfi[idx],T[idx],'values')
+        modes.append(mode)
+    
+    # A str array as wide as the longest label found
+    mode=np.asarray(modes).reshape(shape)
+    
+    return sn, ss, two_theta, mode
+
+
 def failure_plane_orientation(s1a,theta,mode,side):
     """
     Orientation of the failure plane formed at a point, in the 2D section.
@@ -356,6 +414,10 @@ def failure_plane_orientation(s1a,theta,mode,side):
       (e.g. next to an inclined fault), the one closest to dipping towards
       the crack (the steeper one, on that side) is chosen.
     
+    Arrays (since Nov 2026, Phase 2): s1a, theta, mode and side may be arrays
+    (broadcast together); the result is then a float array of that shape,
+    node by node identical to the scalar call.
+    
     Until Nov 2026 this was done with four hand-tuned branches depending on the
     side and on the sign of s1a, which reduce to b = s1a - delta (left) and
     b = s1a + delta (right), and the traces were drawn as (cos b, -sin b). That
@@ -363,6 +425,10 @@ def failure_plane_orientation(s1a,theta,mode,side):
     error was twice the tilt of sigma1. See docs/crack_coordinates_and_rotation.md,
     Section 10.
     """
+    # Arrays: same rules, applied to every node at once
+    if any(np.ndim(v)>0 for v in (s1a,theta,mode,side)):
+        return _failure_plane_orientations(s1a,theta,mode,side)
+    
     # No failure plane without failure
     if not np.isfinite(theta) or mode in ('Below','Above'):
         return float('NaN')
@@ -385,3 +451,34 @@ def failure_plane_orientation(s1a,theta,mode,side):
         chosen=candidates[int(np.argmax(dip_sense))]
     
     return np.deg2rad(chosen)
+
+
+def _failure_plane_orientations(s1a,theta,mode,side):
+    """
+    failure_plane_orientation for arrays (Phase 2, point 3A, Nov 2026). Same
+    rules, written with np.where; see failure_plane_orientation.
+    """
+    # Common shape of the inputs; the mode as a str array
+    s1a,theta,side=np.broadcast_arrays(np.asarray(s1a,dtype=float),np.asarray(theta,dtype=float),
+                                       np.asarray(side,dtype=float))
+    mode=np.broadcast_to(np.asarray(mode).astype(str),s1a.shape)
+    
+    # Shear modes: the two conjugate planes, at +/- delta from sigma1, and the
+    # sense of dip of each (sin(2b) < 0: towards +x; sin(2b) > 0: towards -x)
+    delta=90-theta
+    plus=s1a+delta ; minus=s1a-delta
+    dip_plus=np.sin(np.deg2rad(2*plus)) ; dip_minus=np.sin(np.deg2rad(2*minus))
+    
+    # Left of the crack, the plane dipping most towards +x; right of it, the one
+    # dipping most towards -x. On a tie the first candidate (s1a + delta) is kept,
+    # as np.argmin/np.argmax do in the scalar version.
+    chosen=np.where(side<0,
+                    np.where(dip_plus<=dip_minus,plus,minus),
+                    np.where(dip_plus>=dip_minus,plus,minus))
+    
+    # Mode I: the plane contains sigma1
+    orientation=np.where(mode=='Mode I',np.deg2rad(s1a+theta-90),np.deg2rad(chosen))
+    
+    # No failure plane without failure
+    no_plane=~np.isfinite(theta) | (mode=='Below') | (mode=='Above')
+    return np.where(no_plane,np.nan,orientation)

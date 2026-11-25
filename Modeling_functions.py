@@ -19,11 +19,13 @@ from DiES_core import InputError
 
 # Results containers and figures (Phase 1, Nov 2026). The figures module is
 # imported as dies_plotting because dynamic_model has an argument called plotting
-from results import DiESResults, DynamicResults
+from results import DiESResults, DynamicResults, FAILED_MODES
 import plotting as dies_plotting
 
-# Obtain the function to evaluate the stress state
+# Obtain the function to evaluate the stress state (evaluate_stress_states: the
+# version for arrays, used by compute_dynamic_model since Phase 2)
 from Failure_Determination import evaluate_stress_state
+from Failure_Determination import evaluate_stress_states
 from Failure_Determination import failure_plane_orientation
 
 # Obtaining helper functions
@@ -218,7 +220,10 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     Same inputs as dynamic_model, without downscaling, plotting and folder.
     The driving stresses grow with investigation_range; at each step the stress
     state of every node is evaluated with evaluate_stress_state, and the first
-    failure found at a node is kept in all the following steps.
+    failure found at a node is kept in all the following steps. Since Nov 2026
+    (Phase 2, point 3A) each step evaluates the whole grid in one call
+    (evaluate_stress_states, failure_plane_orientation with arrays) instead of
+    a double loop over rows and nodes; the results are identical.
     
     Returns
     -------
@@ -290,182 +295,76 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     grid=current_model.grid()
     x, y, = grid[0], grid[1]
         
-    # Initial arrays with 0 vaules for all the main parameters
-    prev_sn=np.zeros(np.shape(grid[0])); prev_ss=np.zeros(np.shape(grid[0])) ; prev_above=np.zeros(np.shape(grid[0]))
-    prev_angle=np.zeros(np.shape(grid[0])) ; prev_mode=np.zeros(np.shape(grid[0]))
+    # The failure criterion takes the cfi and T of each node (they change with the layer)
+    node_cfi, node_T = grid[6], grid[8]
     
-    # Initial arrays for the planes in the left hand side of the crack
-    prev_blt=np.zeros(np.shape(grid[0])) ; prev_blu=np.zeros(np.shape(grid[0])) ; prev_blc=np.zeros(np.shape(grid[0])) 
-    
-    # Initial arrays for the planes in the right hand side of the crack
-    prev_brt=np.zeros(np.shape(grid[0])) ; prev_bru=np.zeros(np.shape(grid[0])) ; prev_brc=np.zeros(np.shape(grid[0]))
-    
-    prev_betat=np.zeros(np.shape(grid[0]))
+    # Results of the previous step, to keep the first failure of each node
+    # (None before the first step)
+    previous=None
     
     steps=[]
     step=0
+    
     for step_dx, step_dy, step_dz, length, percentage in zip(dxs_to_use, dys_to_use, dzs_to_use, lengths_to_use, investigation_range):
         step=step+1
         
         # Create the crack with the driving stresses of this step
         disc=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),step_dx,step_dy,step_dz)
+        
         upper_tip=disc.up_tip() ; crack_center=disc.c() ; lower_tip=disc.low_tip()
         
         # Calculating the principal stresses and the orientation of s1, counterclockwise from the x axis
         s1, s3, s1a, s3a = current_model.principal_stresses(disc, rx, ry, litho)
         
-        # Now the stress state needs to be evaluated at each point of the grid and the result stored
-        # In the first loop, the first results are stored for later use.
-        current_sn=[] ; current_ss=[] ; current_angle=[] ; current_mode=[] ; current_above=[]
+        # The stress state of every node of the grid is evaluated in one call
+        # (Phase 2, point 3A, Nov 2026). Until then this was a double loop over
+        # rows and nodes, with one call to evaluate_stress_state per node.
+        sn, ss, two_theta, mode = evaluate_stress_states(s1, s3, node_cfi, node_T)
         
-        # The angles of the failure planes relative to x
-        current_blt=[] ; current_blu=[] ; current_blc=[]
-        current_brt=[] ; current_bru=[] ; current_brc=[]
+        # Obtaining theta from 2theta
+        angle=two_theta/2
         
-        current_betat=[]
+        # 0 where the circle is above failure, NaN elsewhere (used to draw those nodes)
+        above=np.where(mode=='Above', 0.0, np.nan)
         
-        # Running the calculations for each model between the specified investigation ranges
+        # Failure planes. Left of the crack (x <= x of its center) side = -1,
+        # right of it side = +1: the conjugate plane that dips towards the crack
+        # is selected (failure_plane_orientation)
+        side=np.where(x<=crack_center[0], -1, 1)
+        plane=failure_plane_orientation(s1a, angle, mode, side)
+        left=side<0 ; right=~left
         
-        for rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,rS,rm,rT,x_row in zip (s1,s3,s1a,s3a,prev_sn,prev_ss,prev_angle,prev_mode,prev_above,prev_blt,prev_blu,prev_blc,prev_brt,prev_bru,prev_brc,prev_betat,grid[5],grid[6],grid[8],x):
-    
-            cfi=rm[0] ; T=rT[0]
-    
-            row_sn=[] ; row_ss=[] ; row_angle=[] ; row_mode=[] ; row_above=[]
-            
-            row_blt=[] ; row_blu=[] ; row_blc=[] #Lists for the beta values in the rows for the left hand side of the crack 
-                                                 #for tension-compression (t), uniaxial compression (u), and biaxial compression (c)
-            row_brt=[] ; row_bru=[] ; row_brc=[] #The same but for the right hand side of the crack
-            row_betat=[]
-            
-            # Now a single list containing all the lists for the rows of the beta values for all planes
-            rows_beta=[row_blt, row_blu, row_blc ,row_brt, row_bru, row_brc, row_betat]
-            
-            for vs1,vs3,vs1a,vs3a,psn,pss,pa,pm,pabove,pblt,pblu,pblc,pbrt,pbru,pbrc,pbt,cx in zip(rs1,rs3,rs1a,rs3a,prsn,prss,pra,prm,prabove,prblt,prblu,prblc,prbrt,prbru,prbrc,prbt,x_row):
-                
-                sn, ss, angle, mode = evaluate_stress_state(vs1,vs3,cfi,T,'values')
-                
-                # Obtaining theta from 2theta
-                angle=angle/2
-                
-                # This ensures that the first tensile or shear failure values 
-                # are preserved at each node for all the following timesteps
-                if pm=='Mode I' or pm=='Mixed-mode I-II'or pm=='Mode II - tension-compression' or pm=='Mode II - compression'  or pm=='Above':
-                    row_sn.append(psn)
-                    row_ss.append(pss)
-                    row_angle.append(pa)
-                    row_mode.append(pm)
-                    row_above.append(pabove)
-                    
-                    for row_beta,value in zip(rows_beta,(pblt,pblu,pblc,pbrt,pbru,pbrc,pbt)):
-                        row_beta.append(value)
-                            
-                else:
-                    row_sn.append(sn) ; row_ss.append(ss)
-                    row_angle.append(angle) ; row_mode.append(mode)
-                    
-                    # This is done to generate to sets of vectors, one for the
-                    # shear failure planes, another for the tension failure planes
-                    if mode=='Above':
-                        row_above.append(0)
-                    else:
-                        row_above.append(float('NaN'))
-                    
-                    if mode=='Mode I':
-                        i=1
-                        for row_beta in rows_beta:
-                            if i==len(rows_beta):
-                                # Mode I plane: contains sigma1
-                                row_beta.append(failure_plane_orientation(vs1a,angle,mode,0))
-                            else:
-                                row_beta.append(float('NaN'))
-                            i=i+1    
-                                                                      
-                    # The normal-fault-favorable failure planes 
-                    # must be selected from the conjugate planes
-                    else:
-                        # Identifying where the point is located relative to the
-                        # crack and the sign of the principal stress, which determines
-                        # the formula to calculate the angle that should be used
-                        # The conjugate plane that dips towards the crack is selected
-                        # (failure_plane_orientation). j offsets the left/right arrays.
-                        if cx<=crack_center[0]:
-                            j=0 ; side=-1
-                        else:
-                            j=3 ; side=1
-                        
-                        angle_value=failure_plane_orientation(vs1a,angle,mode,side)
-                        
-                        # Identifying the failure mode
-                        if mode=='Mixed-mode I-II':
-                            i=1+j
-
-                        elif mode=='Mode II - tension-compression':
-                            i=2+j
-
-                        elif mode=='Mode II - compression':
-                            i=3+j
-
-                        else:
-                            i=0
-
-                        j=1
-                        for row_beta in rows_beta:
-                            if i==j:
-                                row_beta.append(angle_value)
-                            else:
-                                row_beta.append(float('NaN')) 
-                            j=j+1
-            
-            current_sn.append(row_sn) ; current_ss.append(row_ss)
-            current_angle.append(row_angle) ; current_mode.append(row_mode)
-            current_above.append(row_above)
-            
-            current_blt.append(row_blt) 
-            current_blu.append(row_blu) 
-            current_blc.append(row_blc) 
-            current_brt.append(row_brt) 
-            current_bru.append(row_bru) 
-            current_brc.append(row_brc) 
-            current_betat.append(row_betat)
+        # Each plane goes to the array of its mode and side, NaN elsewhere. The
+        # Mode I plane (it contains sigma1) does not depend on the side.
+        planes={'plane_mixed_left': (mode=='Mixed-mode I-II') & left,
+                'plane_tc_left': (mode=='Mode II - tension-compression') & left,
+                'plane_comp_left': (mode=='Mode II - compression') & left,
+                'plane_mixed_right': (mode=='Mixed-mode I-II') & right,
+                'plane_tc_right': (mode=='Mode II - tension-compression') & right,
+                'plane_comp_right': (mode=='Mode II - compression') & right,
+                'plane_mode_I': mode=='Mode I'}
+        planes={name: np.where(selected, plane, np.nan) for name, selected in planes.items()}
         
-        current_sn=np.asarray(current_sn) ; current_ss=np.asarray(current_ss)        
-        current_angle=np.asarray(current_angle) ; current_mode=np.asarray(current_mode)
-        current_above=np.asarray(current_above)
+        current={'failure_sn':sn, 'failure_ss':ss, 'failure_theta':angle, 'failure_mode':mode,
+                 'above_failure':above}
+        current.update(planes)
         
-        current_blt=np.asarray(current_blt)
-        current_blu=np.asarray(current_blu)
-        current_blc=np.asarray(current_blc)
-        current_brt=np.asarray(current_brt)
-        current_bru=np.asarray(current_bru)
-        current_brc=np.asarray(current_brc)
-        current_betat=np.asarray(current_betat)
-                
+        # This ensures that the first tensile or shear failure values (or 'Above')
+        # are preserved at each node for all the following timesteps
+        if previous is not None:
+            keep=np.isin(previous['failure_mode'], FAILED_MODES)
+            current={name: np.where(keep, previous[name], values) for name, values in current.items()}
+        
         # Storing the current results as the previous results for the next run
-        prev_sn=current_sn ; prev_ss=current_ss
-        prev_angle=current_angle ; prev_mode=current_mode
-        prev_above=current_above
+        previous=current
         
-        prev_blt=current_blt
-        prev_blu=current_blu
-        prev_blc=current_blc
-        prev_brt=current_brt
-        prev_bru=current_bru
-        prev_brc=current_brc
-        prev_betat=current_betat
         # Storing the results of this step (Phase 1, Nov 2026: the figures are no
         # longer drawn inside this loop; see plotting.plot_dynamic_step)
         step_metadata=current_model.metadata(disc, rx, ry, litho)
         step_metadata.update({'step':step, 'n_steps':len(investigation_range), 'percentage':float(percentage),
                               'dx':float(step_dx), 'dy':float(step_dy), 'dz':float(step_dz),
                               'length':float(length), 'length_label':length_label})
-        steps.append(DiESResults(x, y, {'failure_sn':current_sn, 'failure_ss':current_ss,
-                                        'failure_theta':current_angle, 'failure_mode':current_mode,
-                                        'above_failure':current_above,
-                                        'plane_mixed_left':current_blt, 'plane_tc_left':current_blu,
-                                        'plane_comp_left':current_blc, 'plane_mixed_right':current_brt,
-                                        'plane_tc_right':current_bru, 'plane_comp_right':current_brc,
-                                        'plane_mode_I':current_betat},
-                                 step_metadata))
+        steps.append(DiESResults(x, y, current, step_metadata))
         
         del disc
         gc.collect()
