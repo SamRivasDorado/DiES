@@ -29,8 +29,17 @@ REFERENCE = os.path.join(TESTS, 'reference_data', 'regression_0755fe7.npz')
 
 # Key prefix -> largest allowed |difference|, relative to the largest |value| of
 # the reference field (so 1e-13 is 1e-5 Pa for a field of 100 MPa).
-# Empty while the results are identical bit by bit.
-TOLERANCES = {}
+#
+# Phase 2, point 2 (25 Nov 2026): model_displacements and model_stresses evaluate the
+# whole grid in one call instead of node by node. numpy computes np.arctan2 (used by
+# tripolar_coordinates) with vectorized routines for arrays, which round the last bit
+# differently from the scalar routine in ~8% of the values. As a result 0.6% of the
+# static values differ, by at most 3.1e-16 of the field maximum (float64 precision).
+# The NaN pattern, the failure modes and the dynamic models are identical bit by bit.
+TOLERANCES = {
+    'static__': 1e-13,
+    'legacy__': 1e-13,
+}
 
 
 @pytest.fixture(scope='module')

@@ -732,9 +732,11 @@ class model(object):
         Description of the model (and optionally of the crack and the loading)
         as a JSON-serialisable dict, stored with the results.
         """
+        # Numbers and arrays become lists of floats, which JSON can store
         def as_list(values):
             return np.atleast_1d(np.asarray(values,dtype=float)).tolist()
         
+        # The grid and the layers
         info={'x_limits':as_list(self.x_limits), 'y_limits':as_list(self.y_limits),
               'x_cellsize':float(self.x_cellsize), 'y_cellsize':float(self.y_cellsize),
               'n_layers':self.n_layers(), 'y_position_layers':as_list(self.y_position_layers),
@@ -742,6 +744,7 @@ class model(object):
               'layers_d':as_list(self.layers_d), 'layers_c':as_list(self.layers_c),
               'layers_cfi':as_list(self.layers_cfi), 'layers_coula':as_list(self.layers_coula),
               'layers_T':as_list(self.layers_T), 'g':float(self.g)}
+        # The crack, its driving stresses and the loading, when given
         if crack is not None:
             info['crack']={'upper_tip':as_list(crack.up_tip()), 'lower_tip':as_list(crack.low_tip()),
                            'center':as_list(crack.c()), 'length':float(crack.extent()),
@@ -773,6 +776,8 @@ class model(object):
         model_stresses, principal_stresses and plane_stresses.
         """
         litho=require_bool(litho,'litho')
+        # The material at each node is stored with the results (it is needed by
+        # some figures, e.g. coula by the stress trajectories)
         grid=self.grid()
         fields={'E':grid[2], 'nu':grid[3], 'density':grid[4], 'cohesion':grid[5],
                 'cfi':grid[6], 'coula':grid[7], 'T':grid[8]}
@@ -780,6 +785,8 @@ class model(object):
         if displacements:
             fields['ux'], fields['uy'], fields['uz'] = self.model_displacements(crack)
         
+        # The stresses are computed once; the principal stresses and the stresses on
+        # the optimal planes are derived from them, without evaluating the crack again
         if stresses:
             sxx, syy, sav, sxy, sxz, szz, tmax = self.model_stresses(crack, rxx, ryy, litho)
             fields.update({'sxx':sxx, 'syy':syy, 'sav':sav, 'sxy':sxy, 'sxz':sxz, 'szz':szz, 'tmax':tmax})
@@ -800,6 +807,8 @@ class model(object):
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         
+        # One box with the properties of the single layer, or one box per layer,
+        # placed near the top right corner of that layer
         if self.n_layers()==1:
             ax.text(0.93,0.93,
                     'E = '+str(self.layer_values(self.layers_E,'layers_E')[0]/1E9)+' GPa\n'+'v = '+str(self.layer_values(self.layers_v,'layers_v')[0])
@@ -824,6 +833,7 @@ class model(object):
                         bbox=dict(fc='white', ec='black'), 
                         horizontalalignment='right', verticalalignment='top', fontsize=11)
             
+        # The layers, coloured by their Young's modulus
         ax.pcolormesh(grid[0],grid[1],grid[2], shading='auto')
         
         return figure
@@ -888,33 +898,21 @@ class model(object):
         Three 2D arrays, all values in m:
         dx: displacement along x 
         dy: displacement along y
-        dxy: displacement in xy
+        dz: displacement along z (out of the X-Y plane, mode III)
+        (documented as 'dxy, displacement in xy' until Nov 2026)
         """
         
+        # Node coordinates and the E and v of the layer of each node
         grid=self.grid()
         x, y, Es, vs = grid[0], grid[1], grid[2], grid[3] 
                 
         upper_tip=crack.up_tip() ; crack_center=crack.c() ; lower_tip=crack.low_tip()
         dpx=crack.x() ; dpy=crack.y() ; dpz=crack.z()
         
-        dx=[] ; dy=[] ; dz=[]
-    
-        for xrow,yrow,Erow,vrow in zip(x,y, Es,vs):
-            dx_temp=[] ; dy_temp=[] ; dz_temp=[]
-            for i,j,E,v in zip(xrow,yrow,Erow,vrow):
-                point=(i,j)
-                d=displacements(dpx,dpy,dpz,v,E,upper_tip,crack_center,lower_tip,point)
-                dx_temp.append(d[0])
-                dy_temp.append(d[1])
-                dz_temp.append(d[2])
-            
-            dx.append(np.asarray(dx_temp))
-            dy.append(np.asarray(dy_temp))
-            dz.append(np.asarray(dz_temp))
-        
-        dx=np.asarray(dx)
-        dy=np.asarray(dy)
-        dz=np.asarray(dz)
+        # The analytical solution is evaluated once for the whole grid: displacements()
+        # accepts arrays of points and of material properties (Phase 2, Nov 2026).
+        # Until then it was called node by node in a double loop over rows and columns.
+        dx, dy, dz = displacements(dpx,dpy,dpz,vs,Es,upper_tip,crack_center,lower_tip,(x,y))
                 
         return dx,dy,dz
     
@@ -945,7 +943,9 @@ class model(object):
         ----------
         crack: a crack object,        
         rxx: remote stress normal to plane x
-        ryy: remote stress normal to plane y. Both in MPa. Both may be 0.
+        ryy: remote stress normal to plane y. Both in Pa (documented as MPa
+        until Nov 2026), tension positive; floats or 2D arrays with the shape
+        of the grid. Both may be 0.
         boolean: a bool. If True, includes in the calculation the stresses
         associated with the lithostatic load at each point of the grid.
         If False, it does not do this. It must be a real boolean, not a str.
@@ -961,6 +961,10 @@ class model(object):
         szza: resulting normal stress to the z plane 
         ta: shear stress
         """        
+        # A str such as 'True' must not be taken as a bool, so it is rejected here
+        boolean=require_bool(boolean,'boolean')
+        
+        # Node coordinates and the E and v of the layer of each node
         grid=self.grid()
         x, y, Es, vs= grid[0], grid[1], grid[2], grid[3]
         
@@ -970,64 +974,21 @@ class model(object):
         # Following the remote boundary conditions
         rxy=0 ; rxz=0 ; ryz=0
         
-        sxa=[] ; sya=[] ; sxya=[] ; sxza=[] ; syza=[] ; szza=[] ; ta=[]
-          
-        # A str such as 'True' would match neither branch below and return
-        # empty arrays without any warning, so it is rejected here
-        boolean=require_bool(boolean,'boolean')
-
+        # The lithostatic stresses (negative, tension positive) are added to the
+        # remote ones, node by node: rxx and ryy become 2D arrays
         if boolean:
             model_stress=self.stresses_at_depth()
             ryy, rxx= ryy+model_stress[0], rxx+model_stress[1]
-            
-            for xrow,yrow,Erow,vrow,rxrow,ryrow in zip(x,y, Es,vs,rxx,ryy):
-                sx=[] ; sy=[] ; sxy=[] ; sxz=[] ; syz=[] ; szz=[] ; t=[]
-                for i,j,E,v,rx,ry in zip(xrow,yrow,Erow,vrow,rxrow,ryrow):
-                    point=(i,j)
-                    d=stresses(dpx,dpy,dpz,rx,ry,rxy,rxz,ryz,v,E,upper_tip,crack_center,lower_tip,a2/2,point)
-                    sx.append(d[0])
-                    sy.append(d[1])
-                    sxy.append(d[2])
-                    sxz.append(d[3])
-                    syz.append(d[4])
-                    szz.append(d[5])
-                    t.append(d[6])
-                
-                sxa.append(np.asarray(sx))
-                sya.append(np.asarray(sy))
-                sxya.append(np.asarray(sxy))
-                sxza.append(np.asarray(sxz))
-                syza.append(np.asarray(syz))
-                szza.append(np.asarray(szz))
-                ta.append(np.asarray(t))
-                        
-        else:
-            rxx, ryy, rxy = rxx, ryy, 0
-            
-            for xrow,yrow,Erow,vrow in zip(x,y,Es,vs):
-                sx=[] ; sy=[] ; sxy=[] ; sxz=[] ; syz=[] ; szz=[] ; t=[]
-                for i,j,E,v in zip(xrow,yrow,Erow,vrow):
-                    point=(i,j)
-                    d=stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,v,E,upper_tip,crack_center,lower_tip,a2/2,point)
-                    sx.append(d[0])
-                    sy.append(d[1])
-                    sxy.append(d[2])
-                    sxz.append(d[3])
-                    syz.append(d[4])
-                    szz.append(d[5])
-                    t.append(d[6])
-                
-                sxa.append(np.asarray(sx))
-                sya.append(np.asarray(sy))
-                sxya.append(np.asarray(sxy))
-                sxza.append(np.asarray(sxz))
-                syza.append(np.asarray(syz))
-                szza.append(np.asarray(szz))
-                ta.append(np.asarray(t))
-                
-        sxa=(np.asarray(sxa)) ; sya=(np.asarray(sya)) ; sav=(sxa+sya)/2
-        sxya=(np.asarray(sxya)) ; sxza=(np.asarray(sxza)) ; syza=(np.asarray(syza))
-        szza=(np.asarray(szza)) ; ta=(np.asarray(ta))
+        
+        # The analytical solution is evaluated once for the whole grid: stresses()
+        # accepts arrays of points, of material properties and of remote stresses
+        # (Phase 2, Nov 2026). Until then it was called node by node in a double
+        # loop over rows and columns, once with and once without lithostatic load.
+        sxa, sya, sxya, sxza, syza, szza, ta = stresses(dpx,dpy,dpz,rxx,ryy,rxy,rxz,ryz,vs,Es,
+                                                        upper_tip,crack_center,lower_tip,a2/2,(x,y))
+        
+        # Average in-plane normal stress
+        sav=(sxa+sya)/2
             
         return sxa, sya, sav, sxya, sxza, szza, ta
     
