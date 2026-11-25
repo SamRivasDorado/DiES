@@ -1,12 +1,10 @@
 """
 Regression cases of DiES: a fixed set of outputs that a refactoring must not change.
 
-Phase 2 (Nov 2026) vectorizes the core. Every output listed here is computed with
-the code of commit 0755fe7 (end of Phase 1) and stored in
-tests/reference_data/regression_0755fe7.npz; tests/test_regression.py recomputes
-them with the current code and compares them bit by bit (or with an explicit
-tolerance, where a change in the order of the floating-point operations is
-expected and documented).
+Phase 2 (Nov 2026) vectorizes the core. Every output listed here is stored in
+tests/reference_data/regression_reference.npz (computed with the commit recorded in
+tests/test_regression.py); tests/test_regression.py recomputes them with the current
+code and compares them bit by bit (or with an explicit, documented tolerance).
 
 The outputs are computed with whatever DiES modules come first on sys.path, so
 the same file serves to build the reference from an older commit (in a git
@@ -142,11 +140,10 @@ def mohr_outputs(failure, out):
         try:
             result = failure.evaluate_stress_state(p, s, cfi, T, 'values')
         except UnboundLocalError:
-            # Known bug of the sampling algorithm (found on 25 Nov 2026, pending for
-            # Phase 2, point 3B): when a sample of the circle falls exactly on
-            # sigma_n = 0 (e.g. s = 0), it is skipped by both the Griffith (x<0) and
-            # the Coulomb (x>0) checks, no branch assigns the results and the
-            # function crashes. Recorded as 'Error' so that the fix shows up here.
+            # Bug of the sampling algorithm used until Phase 2, point 3B (found on
+            # 25 Nov 2026): when a sample of the circle fell exactly on sigma_n = 0
+            # (e.g. s = 0), no branch assigned the results and the function crashed.
+            # Kept so that the cases can still run with older commits.
             result = (np.nan, np.nan, np.nan, 'Error')
         sn.append(result[0]) ; ss.append(result[1]) ; angle.append(result[2]) ; mode.append(result[3])
     out['mohr__sn'] = np.asarray(sn, dtype=float)

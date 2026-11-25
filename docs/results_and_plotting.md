@@ -83,9 +83,15 @@ dyn.save('dynamic.npz') ; dyn = DynamicResults.load('dynamic.npz')
 ```
 
 Each step holds `failure_sn`, `failure_ss` (MPa), `failure_theta` (degrees), `failure_mode`,
-`above_failure` and the seven orientations of the failure planes `plane_*` (radians,
-counterclockwise from +x). `dynamic_model(..., plotting=True, folder=...)` still saves the same
-figures, with the same file names.
+`above_failure`, `failure_jumped` and the seven orientations of the failure planes `plane_*`
+(radians, counterclockwise from +x). `dynamic_model(..., plotting=True, folder=...)` still saves
+the same figures, with the same file names.
+
+Since Phase 2, point 3B (Nov 2026), the failure criterion is analytical (see
+`docs/failure_criterion.md`). A node that goes from `'Below'` to `'Above'` between two steps
+(it jumped over the failure band) keeps the mode, stresses and plane of the point where its Mohr
+circle touched the envelope, and `failure_jumped` is 1 there (0 elsewhere). The metadata of the
+run include `failure_criterion` (`'analytical'`) and `failure_tolerance`.
 
 ## Classes and their methods
 
@@ -150,4 +156,6 @@ Each step also has every `DiESResults` method (`probe`, `profile`, `mask`, `to_c
   pixel; the wrappers compute once; invalid requests; figures from saved results; Mohr circle.
 - `tests/test_dynamic_results.py` (4): `compute_dynamic_model` against `dynamic_model`, first
   failure kept, `failure_step`, save/load, saved figures equal to `plot_dynamic_step`.
-- `pytest tests/`: 42 tests in total.
+- `pytest tests/`: 42 tests at the end of Phase 1. Phase 2 adds the regression against a stored
+  reference (`tests/test_regression.py`, with `tests/compare_figures.py` for the figures) and the
+  tests of the analytical failure criterion (`tests/test_failure_criterion.py`).

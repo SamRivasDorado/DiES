@@ -9,7 +9,7 @@ copy's tests/, so both renders draw exactly the same figures.
 
 Usage, from the repository root (takes a few minutes):
 
-    python tests/compare_figures.py                    # against 0755fe7
+    python tests/compare_figures.py                    # against the last commit (HEAD)
     python tests/compare_figures.py --ref 164b127 --keep figures_cmp
 
 Exit code 0 if every figure is identical, 1 otherwise. With --keep, the two sets
@@ -63,7 +63,9 @@ def compare(ref_dir, new_dir, diff_dir=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--ref', default='0755fe7', help='reference commit')
+    # HEAD: does the uncommitted change alter any figure? (0755fe7 until point 3B,
+    # whose dynamic figures differ from it by design)
+    parser.add_argument('--ref', default='HEAD', help='reference commit (default: HEAD)')
     parser.add_argument('--keep', default=None, help='folder where the figures are kept')
     args = parser.parse_args(argv)
 

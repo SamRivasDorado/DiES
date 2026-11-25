@@ -26,7 +26,9 @@ import plotting as dies_plotting
 # version for arrays, used by compute_dynamic_model since Phase 2)
 from Failure_Determination import evaluate_stress_state
 from Failure_Determination import evaluate_stress_states
+from Failure_Determination import failure_contact
 from Failure_Determination import failure_plane_orientation
+from Failure_Determination import FAILURE_TOLERANCE
 
 # Obtaining helper functions
 from Helper_functions import create_figure
@@ -224,6 +226,10 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     (Phase 2, point 3A) each step evaluates the whole grid in one call
     (evaluate_stress_states, failure_plane_orientation with arrays) instead of
     a double loop over rows and nodes; the results are identical.
+    Since point 3B the criterion is analytical (see evaluate_stress_state), and
+    a node that jumps from 'Below' to 'Above' between two steps keeps the mode,
+    stresses and plane of the point where its Mohr circle touched the envelope;
+    those nodes are marked with failure_jumped = 1.
     
     Returns
     -------
@@ -302,6 +308,14 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     # (None before the first step)
     previous=None
     
+    # Failure modes before the crack is loaded (remote and lithostatic stresses
+    # only): a node that is already 'Above' then did not fail because of the
+    # crack, and is not taken as having jumped over the failure band at step 1
+    unloaded=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),0,0,0)
+    s1_0, s3_0, _, _ = current_model.principal_stresses(unloaded, rx, ry, litho)
+    previous_mode=evaluate_stress_states(s1_0, s3_0, node_cfi, node_T)[3]
+    del unloaded
+    
     steps=[]
     step=0
     
@@ -320,6 +334,19 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         # (Phase 2, point 3A, Nov 2026). Until then this was a double loop over
         # rows and nodes, with one call to evaluate_stress_state per node.
         sn, ss, two_theta, mode = evaluate_stress_states(s1, s3, node_cfi, node_T)
+        
+        # Nodes that jumped over the failure band since the previous step (from
+        # 'Below' to 'Above': the driving stress grew too much in one step).
+        # They get the failure mode and the stresses of the point where their
+        # Mohr circle touched the envelope (the envelope point: the best estimate
+        # of the stresses on the plane at the moment of failure) (Phase 2, point 3B, Nov 2026; until
+        # then they stayed 'Above', without mode or plane)
+        jumped=(mode=='Above') & (previous_mode=='Below')
+        if np.any(jumped):
+            _, contact_sn, contact_ss, contact_two_theta, contact_mode = failure_contact(s1, s3, node_cfi, node_T)
+            sn=np.where(jumped, contact_sn, sn) ; ss=np.where(jumped, contact_ss, ss)
+            two_theta=np.where(jumped, contact_two_theta, two_theta)
+            mode=np.where(jumped, contact_mode, mode)
         
         # Obtaining theta from 2theta
         angle=two_theta/2
@@ -346,7 +373,7 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         planes={name: np.where(selected, plane, np.nan) for name, selected in planes.items()}
         
         current={'failure_sn':sn, 'failure_ss':ss, 'failure_theta':angle, 'failure_mode':mode,
-                 'above_failure':above}
+                 'above_failure':above, 'failure_jumped':np.where(jumped, 1.0, 0.0)}
         current.update(planes)
         
         # This ensures that the first tensile or shear failure values (or 'Above')
@@ -357,6 +384,7 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         
         # Storing the current results as the previous results for the next run
         previous=current
+        previous_mode=current['failure_mode']
         
         # Storing the results of this step (Phase 1, Nov 2026: the figures are no
         # longer drawn inside this loop; see plotting.plot_dynamic_step)
@@ -371,7 +399,8 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     
     return DynamicResults(steps, {'model_inputs':[float(v) for v in model_inputs], 'crack_inputs':[float(v) for v in crack_inputs],
                                   'investigation_range':[float(v) for v in investigation_range],
-                                  'rx':float(np.mean(rx)), 'ry':float(np.mean(ry)), 'litho':litho, 'g':float(g)})
+                                  'rx':float(np.mean(rx)), 'ry':float(np.mean(ry)), 'litho':litho, 'g':float(g),
+                                  'failure_criterion':'analytical', 'failure_tolerance':FAILURE_TOLERANCE})
 
 
 def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder):

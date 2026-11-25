@@ -113,12 +113,14 @@ def test_dynamic_model_scales_driving_stresses_per_step():
     # Dike: dx follows from the aperture (the input dx is ignored); dy and dz scale with the step
     b = 1500
     dx_final = DIKE[0]*G(E, NU)/(b*(1 - NU))
+    # Since Phase 2, point 3B, the first crack created is the unloaded one (driving
+    # stresses 0), used to know which nodes are above failure before loading
     recorded, modes = run_recording(DIKE, 123.0, 2e6, 1e6, steps)
-    assert np.allclose(recorded, [[f*dx_final, f*2e6, f*1e6] for f in steps])
+    assert np.allclose(recorded, [[0.0, 0.0, 0.0]] + [[f*dx_final, f*2e6, f*1e6] for f in steps])
     # Faults: dilatant (dx > 0), compaction band (dx < 0) and pure shear (dx = 0)
     for dx in (2e6, -2e6, 0.0):
         recorded, modes = run_recording(FAULT, dx, 5e6, 0.0, steps)
-        assert np.allclose(recorded, [[f*dx, f*5e6, 0.0] for f in steps]), dx
+        assert np.allclose(recorded, [[0.0, 0.0, 0.0]] + [[f*dx, f*5e6, 0.0] for f in steps]), dx
         assert modes.shape == (len(np.arange(*YLIMS, RES[1])), len(np.arange(*XLIMS, RES[0])))
 
 

@@ -8,11 +8,11 @@ removed at the end.
 
 Usage, from the repository root:
 
-    python tests/make_regression_reference.py                      # commit 0755fe7
+    python tests/make_regression_reference.py                      # last commit (HEAD)
     python tests/make_regression_reference.py --commit 164b127 --out other.npz
 
-The reference stored in the repository is
-tests/reference_data/regression_0755fe7.npz (end of Phase 1, Nov 2026).
+The reference stored in the repository is tests/reference_data/regression_reference.npz;
+tests/test_regression.py records which commit it was computed with.
 """
 
 import argparse
@@ -23,7 +23,7 @@ import tempfile
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TESTS)
-DEFAULT_COMMIT = '0755fe7'
+DEFAULT_COMMIT = 'HEAD'
 
 
 def run(command, **kwargs):
@@ -50,9 +50,9 @@ def build_reference(commit, out):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--commit', default=DEFAULT_COMMIT)
-    parser.add_argument('--out', default=None, help='default: tests/reference_data/regression_<commit>.npz')
+    parser.add_argument('--out', default=None, help='default: tests/reference_data/regression_reference.npz')
     args = parser.parse_args(argv)
-    out = args.out or os.path.join(TESTS, 'reference_data', 'regression_' + args.commit + '.npz')
+    out = args.out or os.path.join(TESTS, 'reference_data', 'regression_reference.npz')
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     build_reference(args.commit, os.path.abspath(out))
 

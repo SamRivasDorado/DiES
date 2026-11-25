@@ -1,12 +1,23 @@
 """
-Regression test: the current code must reproduce the outputs of commit 0755fe7
-(end of Phase 1) stored in tests/reference_data/regression_0755fe7.npz.
+Regression test: the current code must reproduce the outputs stored in
+tests/reference_data/regression_reference.npz.
+
+History of the reference:
+  - 25 Nov 2026: computed with commit 0755fe7 (end of Phase 1). Phase 2, points 2
+    and 3A reproduced it (bit by bit, except the last bit of the static fields, see
+    the roadmap).
+  - 25 Nov 2026, branch phase2-analytic-failure (Phase 2, point 3B): recomputed with
+    the analytical failure criterion, in the commit that introduced it. Before
+    replacing it, the static fields, the legacy methods and the failure planes were
+    checked against the 0755fe7 reference (within 3.1e-16 of each field maximum);
+    the dynamic models and the Mohr sweep change by design
+    (docs/failure_criterion.md, Section 6). The dynamic models also gain the field
+    failure_jumped.
 
 The comparison is bit by bit (NaN equal to NaN, same NaN pattern), except for
-the outputs listed in TOLERANCES, where a documented change in the floating-point
-operations is allowed to change the last digits. A deliberate change of the
-results (e.g. a new failure criterion) must update the reference with
-tests/make_regression_reference.py and be recorded in the roadmap.
+the outputs listed in TOLERANCES. A deliberate change of the results must update
+the reference with tests/make_regression_reference.py and be recorded here and in
+the roadmap.
 
 The cases and outputs are defined in tests/regression_cases.py.
 """
@@ -25,21 +36,14 @@ for folder in (ROOT, TESTS):
 
 import regression_cases
 
-REFERENCE = os.path.join(TESTS, 'reference_data', 'regression_0755fe7.npz')
+REFERENCE = os.path.join(TESTS, 'reference_data', 'regression_reference.npz')
 
 # Key prefix -> largest allowed |difference|, relative to the largest |value| of
 # the reference field (so 1e-13 is 1e-5 Pa for a field of 100 MPa).
-#
-# Phase 2, point 2 (25 Nov 2026): model_displacements and model_stresses evaluate the
-# whole grid in one call instead of node by node. numpy computes np.arctan2 (used by
-# tripolar_coordinates) with vectorized routines for arrays, which round the last bit
-# differently from the scalar routine in ~8% of the values. As a result 0.6% of the
-# static values differ, by at most 3.1e-16 of the field maximum (float64 precision).
-# The NaN pattern, the failure modes and the dynamic models are identical bit by bit.
-TOLERANCES = {
-    'static__': 1e-13,
-    'legacy__': 1e-13,
-}
+# Empty: the reference was computed with the current way of evaluating the grid
+# (until point 3B it was the 0755fe7 reference, and the static fields had a
+# tolerance of 1e-13 for the last bit of np.arctan2 with arrays; see the roadmap).
+TOLERANCES = {}
 
 
 @pytest.fixture(scope='module')
