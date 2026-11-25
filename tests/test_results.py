@@ -26,7 +26,7 @@ E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
 
 
 def small_case():
-    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, CFI, T, 3.71)
+    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, CFI, T, 9.81)
     up, lo = (0, -500), (0, -2000)
     disc = crack(up, lo, 2*G(E, NU)/(1500*(1 - NU)), 0, 0)
     return m, disc

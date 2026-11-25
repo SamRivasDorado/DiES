@@ -39,7 +39,8 @@ import numpy as np
 # 60-degree pure-shear fault with sigma_II = 15 MPa) plus a dilatant fault with
 # remote stresses and mode III, which exercises every term of the solution.
 MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, -1.5e6]   # E, nu, density, cfi, T
-G_MARS = 3.71
+# Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
+G_EARTH = 9.81
 XLIMS = [-5000, 5000]
 YLIMS = [-6000, -10]
 # A coarser grid than visual_check (250 m instead of 100 m) keeps the test fast;
@@ -93,7 +94,7 @@ def static_outputs(core, helpers, out):
     E, nu, density, cfi, T = MODEL_INPUTS
     for case, (ci, dx, dy, dz, rx, ry) in CASES.items():
         disc = core.crack((ci[1], ci[2]), (ci[3], ci[4]), driving_stress_x(case, core, helpers), dy, dz)
-        m = core.model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, density, cfi, T, G_MARS)
+        m = core.model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, density, cfi, T, G_EARTH)
         for litho in (False, True):
             prefix = case + '__litho' + str(int(litho)) + '__'
             res = m.compute(disc, rx, ry, litho)
@@ -115,7 +116,7 @@ def dynamic_outputs(core, helpers, modeling, out):
     """Every field of every step of compute_dynamic_model, stacked as (step, row, column)."""
     for case, (ci, dx, dy, dz, rx, ry) in CASES.items():
         steps = investigation_range(case, core, helpers)
-        dyn = modeling.compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, rx, ry, G_MARS, True,
+        dyn = modeling.compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, rx, ry, G_EARTH, True,
                                              steps, XLIMS, YLIMS, RESOLUTION_DYNAMIC)
         for name in dyn[0].names():
             out['dynamic__' + case + '__' + name] = np.stack([np.asarray(step[name]) for step in dyn])

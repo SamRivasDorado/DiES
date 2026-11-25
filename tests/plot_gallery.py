@@ -40,7 +40,7 @@ from DiES_core import model, crack
 from Helper_functions import G, points_distance
 from Modeling_functions import compute_dynamic_model
 import plotting
-from visual_check import CASES, MODEL_INPUTS, G_MARS, XLIMS, YLIMS, RESOLUTION
+from visual_check import CASES, MODEL_INPUTS, G_EARTH, XLIMS, YLIMS, RESOLUTION
 
 warnings.filterwarnings('ignore')
 
@@ -52,9 +52,9 @@ def build(name):
     # Same as single_model: an opening crack gets dx from its aperture
     px = dx if a == 0 else a*G(E, nu)/(points_distance(up, lo)*(1 - nu))
     disc = crack(up, lo, px, dy, dz)
-    stress_model = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, d, cfi, T, G_MARS)
+    stress_model = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, d, cfi, T, G_EARTH)
     # single_model uses coarser grids for the vector plots and the trajectories
-    vector_model = model(XLIMS, YLIMS, RESOLUTION[0]*2.5, RESOLUTION[1]*3, 500, E, nu, d, cfi, T, G_MARS)
+    vector_model = model(XLIMS, YLIMS, RESOLUTION[0]*2.5, RESOLUTION[1]*3, 500, E, nu, d, cfi, T, G_EARTH)
     return title, disc, stress_model, vector_model
 
 
@@ -109,7 +109,7 @@ def dynamic_figures(name, litho, rx, ry, folder, steps, show_every):
     os.makedirs(folder, exist_ok=True)
     for old in glob.glob(os.path.join(folder, '*.png')):
         os.remove(old)
-    results = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, rx, ry, G_MARS, litho, steps,
+    results = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, rx, ry, G_EARTH, litho, steps,
                                     XLIMS, YLIMS, RESOLUTION)
     E, nu, T = MODEL_INPUTS[0], MODEL_INPUTS[1], MODEL_INPUTS[4]
     paths = []
@@ -153,7 +153,7 @@ def main(argv=None):
             cover = plt.figure(figsize=(11, 3))
             cover.text(0.5, 0.6, title, ha='center', fontsize=20, weight='bold')
             cover.text(0.5, 0.3, 'litho=' + str(litho) + ', rx=' + str(args.rx/1e6) + ' MPa, ry='
-                       + str(args.ry/1e6) + ' MPa, g = ' + str(G_MARS) + ' m/s², E = '
+                       + str(args.ry/1e6) + ' MPa, g = ' + str(G_EARTH) + ' m/s², E = '
                        + str(MODEL_INPUTS[0]/1e9) + ' GPa, ν = ' + str(MODEL_INPUTS[1])
                        + ', cfi = ' + str(MODEL_INPUTS[3]) + ', T = ' + str(MODEL_INPUTS[4]/1e6) + ' MPa',
                        ha='center', fontsize=11)

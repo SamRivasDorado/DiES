@@ -35,7 +35,8 @@ warnings.filterwarnings('ignore')
 
 E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
 MODEL_INPUTS = [E, NU, RHO, CFI, T]
-G_MARS = 3.71
+# Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
+G_EARTH = 9.81
 # Small grid to keep the tests fast
 XLIMS, YLIMS, RES = [-1500, 1500], [-2500, -10], [250, 250]
 DIKE = [2, 0, -500, 0, -2000]                  # aperture 2 m, vertical
@@ -52,7 +53,7 @@ def test_bools_must_be_real_bools():
             continue
         raise AssertionError('no InputError for ' + repr(value))
     try:
-        single_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, G_MARS, 'True', 60, XLIMS, YLIMS, RES, 'sxy')
+        single_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, G_EARTH, 'True', 60, XLIMS, YLIMS, RES, 'sxy')
     except InputError:
         return
     raise AssertionError("single_model accepted litho='True'")
@@ -60,7 +61,7 @@ def test_bools_must_be_real_bools():
 
 def test_model_inputs_need_five_values():
     try:
-        single_model(DIKE, [E, NU, RHO, 3e6, CFI, T], 0, 0, 0, 0, 0, G_MARS, True, 60, XLIMS, YLIMS, RES, 'sxy')
+        single_model(DIKE, [E, NU, RHO, 3e6, CFI, T], 0, 0, 0, 0, 0, G_EARTH, True, 60, XLIMS, YLIMS, RES, 'sxy')
     except InputError:
         return
     raise AssertionError('6 model_inputs accepted')
@@ -81,7 +82,7 @@ def test_single_model_all_parameters():
     for litho in (True, False):
         for parameter in PARAMETERS:
             for crack_inputs, dy in ((DIKE, 0), (FAULT, 5e6)):
-                fig = single_model(crack_inputs, MODEL_INPUTS, 0, dy, 0, 0, 0, G_MARS, litho, 60,
+                fig = single_model(crack_inputs, MODEL_INPUTS, 0, dy, 0, 0, 0, G_EARTH, litho, 60,
                                    XLIMS, YLIMS, RES, parameter)
                 assert isinstance(fig, matplotlib.figure.Figure), (parameter, litho)
                 plt.close(fig)
@@ -101,7 +102,7 @@ def run_recording(crack_inputs, dx, dy, dz, steps):
     original = Modeling_functions.crack
     Modeling_functions.crack = RecordingCrack
     try:
-        modes = dynamic_model(crack_inputs, MODEL_INPUTS, dx, dy, dz, 0, 0, G_MARS, True, steps,
+        modes = dynamic_model(crack_inputs, MODEL_INPUTS, dx, dy, dz, 0, 0, G_EARTH, True, steps,
                               XLIMS, YLIMS, RES, 2, False, '.')
     finally:
         Modeling_functions.crack = original
@@ -127,7 +128,7 @@ def test_dynamic_model_scales_driving_stresses_per_step():
 def test_dynamic_model_one_png_per_step():
     folder = tempfile.mkdtemp()
     steps = [0.5, 1.0]
-    dynamic_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, G_MARS, True, steps, XLIMS, YLIMS, RES, 2, True, folder)
+    dynamic_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, G_EARTH, True, steps, XLIMS, YLIMS, RES, 2, True, folder)
     plt.close('all')
     assert len(glob.glob(os.path.join(folder, '*.png'))) == len(steps)
 
@@ -136,7 +137,7 @@ def test_tip_on_a_grid_node_is_singular():
     # Upper tip at (-125, -510): a node of the 250 x 250 m grid, whose x nodes are
     # shifted half a cell (-1375, ..., -125, 125, ...) and whose y nodes start at -2510
     crack_inputs = [0, -125, -510, 375, -1376.0254]
-    modes = dynamic_model(crack_inputs, MODEL_INPUTS, 2e6, 5e6, 0, 0, 0, G_MARS, True, [0.5, 1.0],
+    modes = dynamic_model(crack_inputs, MODEL_INPUTS, 2e6, 5e6, 0, 0, 0, G_EARTH, True, [0.5, 1.0],
                           XLIMS, [-2510, -10], RES, 2, False, '.')
     assert 'Singular' in np.asarray(modes).astype(str)
 

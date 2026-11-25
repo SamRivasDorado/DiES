@@ -13,6 +13,9 @@ History of the reference:
     the dynamic models and the Mohr sweep change by design
     (docs/failure_criterion.md, Section 6). The dynamic models also gain the field
     failure_jumped.
+  - 25 Nov 2026, same branch: recomputed with Earth gravity (g = 9.81 m/s^2, Sam's
+    convention for the tests from then on; Mars, 3.71, until then). Same code
+    (commit 8c8f02a); only the cases changed.
 
 The comparison is bit by bit (NaN equal to NaN, same NaN pattern), except for
 the outputs listed in TOLERANCES. A deliberate change of the results must update

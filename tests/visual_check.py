@@ -34,10 +34,13 @@ from Modeling_functions import single_model
 
 # Material: E (Pa), v, density (kg m-3), cfi, T (Pa). Cohesion is implicit, C = 2|T|
 # Values of the example model in Rivas-Dorado et al. (2023, JSG 167, 104778). With v = 0.25
-# and cfi = 0.57 the lithostatic state alone does not reach failure (with cfi >= 0.6 it does).
+# and cfi = 0.57 the lithostatic state alone does not reach failure (with cfi >= 0.6 it does),
+# except near the bottom of the grid with Earth gravity: there it reaches the lower edge of the
+# failure band (r/r_c = 0.965) at ~6.0 km depth.
 # T is negative: tension is negative on the Mohr diagram.
 MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, -1.5e6]
-G_MARS = 3.71
+# Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
+G_EARTH = 9.81
 XLIMS = [-5000, 5000]
 YLIMS = [-6000, -10]
 RESOLUTION = [100, 100]
@@ -58,7 +61,7 @@ def run_case(name, stress, litho, rx, ry):
     title, crack_inputs, dx, dy, dz = CASES[name]
     figures = {}
     for parameter in (stress, 'uxy'):
-        fig = single_model(crack_inputs, MODEL_INPUTS, dx, dy, dz, rx, ry, G_MARS, litho,
+        fig = single_model(crack_inputs, MODEL_INPUTS, dx, dy, dz, rx, ry, G_EARTH, litho,
                            60, XLIMS, YLIMS, RESOLUTION, parameter)
         fig.suptitle(title + ' — ' + parameter, fontsize=11)
         figures[parameter] = fig

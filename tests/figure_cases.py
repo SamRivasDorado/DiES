@@ -54,14 +54,14 @@ def render_all(code_root, out):
     from Failure_Determination import evaluate_stress_state
     import plotting
     import plot_gallery
-    from visual_check import CASES, MODEL_INPUTS, G_MARS, XLIMS, YLIMS, RESOLUTION
+    from visual_check import CASES, MODEL_INPUTS, G_EARTH, XLIMS, YLIMS, RESOLUTION
     os.makedirs(out, exist_ok=True)
 
     for case, (title, ci, dx, dy, dz) in CASES.items():
         # 1. single_model, every parameter, with and without lithostatic load
         for litho in (False, True):
             for parameter in PARAMETERS:
-                fig = single_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_MARS, litho, 60,
+                fig = single_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_EARTH, litho, 60,
                                    XLIMS, YLIMS, RESOLUTION, parameter)
                 save(fig, out, 'single_model__' + case + '__litho' + str(int(litho)) + '__' + parameter)
         # 2. Every static figure of the gallery (model.compute + plotting.py)
@@ -70,14 +70,14 @@ def render_all(code_root, out):
             save(fig, out, 'gallery__' + case + '__%02d_%s' % (i, safe))
         # 3. Dynamic model: one step in 4 and the last
         steps = plot_gallery.investigation_range(case, 0.25)
-        dyn = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_MARS, True, steps,
+        dyn = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_EARTH, True, steps,
                                     XLIMS, YLIMS, RESOLUTION_DYNAMIC)
         for k, step in enumerate(dyn, start=1):
             if k % 4 == 0 or k == len(dyn):
                 save(plotting.plot_dynamic_step(step, 2), out, 'dynamic__' + case + '__step%02d' % k)
         # 4. The legacy dynamic_model wrapper, which saves its own figures
         with tempfile.TemporaryDirectory() as folder:
-            dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_MARS, True, [1/3, 2/3, 1],
+            dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_EARTH, True, [1/3, 2/3, 1],
                           XLIMS, YLIMS, RESOLUTION_DYNAMIC, 2, True, folder + os.sep)
             for name in sorted(os.listdir(folder)):
                 image = plt.imread(os.path.join(folder, name))

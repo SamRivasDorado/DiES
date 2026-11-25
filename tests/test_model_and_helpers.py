@@ -23,14 +23,15 @@ from Helper_functions import linear, power_law, scale_arrows
 
 warnings.filterwarnings('ignore')
 
-G_MARS = 3.71
+# Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
+G_EARTH = 9.81
 LAYERS = dict(ypos=(-1100., -600., -300., 0.), E=[10e9, 20e9, 30e9], v=[0.25, 0.3, 0.35],
               d=[2500, 2600, 2700], cfi=[0.6, 0.7, 0.8], T=[-1e6, -2e6, -3e6])
 
 
 def three_layer_model():
     L = LAYERS
-    return model((0, 1000), (-1000, 0), 100, 100, L['ypos'], L['E'], L['v'], L['d'], L['cfi'], L['T'], G_MARS)
+    return model((0, 1000), (-1000, 0), 100, 100, L['ypos'], L['E'], L['v'], L['d'], L['cfi'], L['T'], G_EARTH)
 
 
 def expected_layer(y):
@@ -61,10 +62,10 @@ def test_multilayer_lithostatic_stresses():
     def litho(yv):
         depth = -yv
         if yv >= -300:
-            return 2700*G_MARS*depth
+            return 2700*G_EARTH*depth
         if yv >= -600:
-            return 2700*G_MARS*300 + 2600*G_MARS*(depth - 300)
-        return 2700*G_MARS*300 + 2600*G_MARS*300 + 2500*G_MARS*(depth - 600)
+            return 2700*G_EARTH*300 + 2600*G_EARTH*(depth - 300)
+        return 2700*G_EARTH*300 + 2600*G_EARTH*300 + 2500*G_EARTH*(depth - 600)
 
     expected = np.array([litho(v) for v in y])
     nu = np.array(LAYERS['v'])[expected_layer(y)]
@@ -74,12 +75,12 @@ def test_multilayer_lithostatic_stresses():
 
 
 def test_single_layer_lithostatic_and_tuple_input():
-    m1 = model((0, 1000), (-1000, 0), 100, 100, 0.0, 10e9, 0.25, 2500, 0.6, -1e6, G_MARS)
-    m2 = model((0, 1000), (-1000, 0), 100, 100, (0.0,), (10e9,), (0.25,), (2500,), (0.6,), (-1e6,), G_MARS)
+    m1 = model((0, 1000), (-1000, 0), 100, 100, 0.0, 10e9, 0.25, 2500, 0.6, -1e6, G_EARTH)
+    m2 = model((0, 1000), (-1000, 0), 100, 100, (0.0,), (10e9,), (0.25,), (2500,), (0.6,), (-1e6,), G_EARTH)
     assert np.array_equal(m1.grid(), m2.grid())
     syy, sxx = m1.stresses_at_depth()
     y = m1.grid()[1]
-    assert np.allclose(-syy, 2500*G_MARS*np.abs(y))
+    assert np.allclose(-syy, 2500*G_EARTH*np.abs(y))
     assert np.allclose(sxx, syy*0.25/0.75)
     assert all(np.array_equal(a, b) for a, b in zip(m1.stresses_at_depth(), m2.stresses_at_depth()))
     assert np.allclose(m1.grid()[5], 2e6)                           # implicit cohesion 2|T|
@@ -89,7 +90,7 @@ def test_invalid_layers_raise():
     for ypos, n in (((-1100., -600., 0.), 3), ((-300., -600., 0.), 2)):
         try:
             model((0, 1000), (-1000, 0), 100, 100, ypos, [1e9]*n, [0.25]*n, [2500]*n, [0.6]*n, [-1e6]*n,
-                  G_MARS).grid()
+                  G_EARTH).grid()
         except InputError:
             continue
         raise AssertionError('no InputError for ' + str(ypos))

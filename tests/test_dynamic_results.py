@@ -34,11 +34,11 @@ STEPS = [0.25, 0.5, 0.75, 1.0]
 
 
 def run(plot=False, folder='.'):
-    return dynamic_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, 3.71, True, STEPS, XLIMS, YLIMS, RES, 2, plot, folder)
+    return dynamic_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, 9.81, True, STEPS, XLIMS, YLIMS, RES, 2, plot, folder)
 
 
 def compute():
-    return compute_dynamic_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, 3.71, True, STEPS, XLIMS, YLIMS, RES)
+    return compute_dynamic_model(DIKE, MODEL_INPUTS, 0, 0, 0, 0, 0, 9.81, True, STEPS, XLIMS, YLIMS, RES)
 
 
 def test_compute_matches_dynamic_model():

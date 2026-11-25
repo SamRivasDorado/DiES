@@ -23,7 +23,8 @@ from Helper_functions import G
 warnings.filterwarnings('ignore')
 
 E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
-G_MARS = 3.71
+# Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
+G_EARTH = 9.81
 CASES = {
     'vertical dike': ((0, -1000), (0, -5000), 2, 0),          # aperture 2 m
     'fault dipping 60 towards +x': ((-500, -1000), (500, -2732.0508), 0, 15e6),
@@ -35,7 +36,7 @@ def setup(up, lo, aperture, dy, cell=(200, 150)):
     b = np.hypot(up[0] - lo[0], up[1] - lo[1])
     px = aperture*G(E, NU)/(b*(1 - NU)) if aperture else 0
     disc = crack(up, lo, px, dy, 0)
-    m = model((-5000, 5000), (-6000, -10), cell[0], cell[1], 500, E, NU, RHO, CFI, T, G_MARS)
+    m = model((-5000, 5000), (-6000, -10), cell[0], cell[1], 500, E, NU, RHO, CFI, T, G_EARTH)
     S = m.model_stresses(disc, 0, 0, True)
     sxx, syy, sxy = -S[0], -S[1], -S[3]                     # compression positive
     tensor = np.stack([np.stack([sxx, sxy], -1), np.stack([sxy, syy], -1)], -2)
@@ -61,7 +62,7 @@ def test_principal_orientations_match_eigenvectors():
 def test_lithostatic_sigma1_is_vertical():
     # No crack loading and no remote stresses: sigma1 must be vertical (90) everywhere
     disc = crack((0, -1000), (0, -5000), 0, 0, 0)
-    m = model((-5000, 5000), (-6000, -10), 500, 500, 500, E, NU, RHO, CFI, T, G_MARS)
+    m = model((-5000, 5000), (-6000, -10), 500, 500, 500, E, NU, RHO, CFI, T, G_EARTH)
     s1, s3, s1a, s3a = m.principal_stresses(disc, 0, 0, True)
     assert np.allclose(s1a, 90) and np.allclose(s3a, 0)
 
@@ -101,9 +102,13 @@ def test_failure_planes_resolve_to_the_mohr_tangent_point():
 
 
 def test_tensile_strength_sign():
-    # Stable lithostatic states must be below failure with T < 0
-    for depth in (300, 1000, 3000, 6000):
-        s1 = RHO*G_MARS*depth ; s3 = s1*NU/(1 - NU)
+    # Stable lithostatic states must be below failure with T < 0.
+    # With v = 0.25 the lithostatic state has s3 = s1/3, so r = c/2 while the critical
+    # radius on the Coulomb line tends to cfi*c/sqrt(1 + cfi^2) = 0.495c: r/r_c tends to
+    # ~1.01 with depth. With Earth gravity it reaches the lower edge of the failure band
+    # (0.965) at ~6.0 km (on Mars, at ~16 km), so depths up to 5 km are checked.
+    for depth in (300, 1000, 3000, 5000):
+        s1 = RHO*G_EARTH*depth ; s3 = s1*NU/(1 - NU)
         assert evaluate_stress_state(s1, s3, CFI, T, 'values')[3] == 'Below', depth
     # Tension beyond |T| fails; tension below |T| with a small circle does not
     assert evaluate_stress_state(5e6, -1.6e6, CFI, T, 'values')[3] == 'Above'

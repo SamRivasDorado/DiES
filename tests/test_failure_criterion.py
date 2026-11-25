@@ -134,7 +134,7 @@ def test_agrees_with_the_sampling_algorithm_on_the_coulomb_line():
 def test_dynamic_model_records_nodes_that_jump_the_band():
     ci = [2, 0, -1000, 0, -5000]
     model_inputs = [30e9, 0.25, 2900, CFI, T]
-    args = (ci, model_inputs, 0, 0, 0, 0, 0, 3.71, True)
+    args = (ci, model_inputs, 0, 0, 0, 0, 0, 9.81, True)
     grid = ([-3000, 3000], [-3000, -10], [250, 250])
     # Two large steps: many nodes go from below to above failure in one step
     coarse = compute_dynamic_model(*args, [0.5, 1.0], *grid)
