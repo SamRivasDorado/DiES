@@ -363,16 +363,22 @@ def failure_plane_orientation(s1a,theta,mode,side):
     error was twice the tilt of sigma1. See docs/crack_coordinates_and_rotation.md,
     Section 10.
     """
+    # No failure plane without failure
     if not np.isfinite(theta) or mode in ('Below','Above'):
         return float('NaN')
     
+    # Mode I: the plane contains sigma1
     if mode=='Mode I':
         return np.deg2rad(s1a+theta-90)
     
+    # Shear modes: the two conjugate planes, at +/- delta from sigma1
     delta=90-theta
     candidates=(s1a+delta, s1a-delta)
+    # sin(2b) < 0: the plane dips towards +x; sin(2b) > 0: towards -x
     dip_sense=[np.sin(np.deg2rad(2*c)) for c in candidates]
     
+    # Left of the crack, the plane dipping most towards +x (towards the crack);
+    # right of it, the one dipping most towards -x
     if side<0:
         chosen=candidates[int(np.argmin(dip_sense))]
     else:

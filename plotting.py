@@ -48,6 +48,7 @@ STRESS_KEYS.update({field: (field, label) for field, label in list(STRESS_KEYS.v
 
 
 def _require(res, *names):
+    # Fails early, with a clear message, if the results lack a field a figure needs
     missing = [name for name in names if name not in res]
     if missing:
         raise PlotError('The results do not contain ' + ', '.join(missing)
@@ -55,6 +56,7 @@ def _require(res, *names):
 
 
 def _crack_tips(res):
+    # The crack tips, stored in the metadata by model.metadata(), to draw the crack
     crack = res.metadata.get('crack')
     if crack is None:
         raise PlotError('The results have no crack in their metadata')
@@ -72,6 +74,7 @@ def _axes(res, figsize, locators):
 
 
 def _set_locators(ax):
+    # Ticks every 1000 m (x) and 500 m (y), minor ticks every 100 m, as in the original figures
     ax.xaxis.set_major_locator(MultipleLocator(1000))
     ax.xaxis.set_minor_locator(MultipleLocator(100))
     ax.yaxis.set_major_locator(MultipleLocator(500))
@@ -95,16 +98,20 @@ def _scalar_field(res, soi, label, step, figsize=(6, 6), locators=False, grid_li
     upper_tip, lower_tip = _crack_tips(res)
     x, y = res.x, res.y
     figure, ax = _axes(res, figsize, locators)
+    # The crack, in red
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3)
     if locators:
         _set_locators(ax)
+    # Colour limits and contour levels, rounded to multiples of step
     plot_params = boundaries_contours(soi, step)
+    # Colour map of the field, with a colour bar
     plot = ax.pcolormesh(x, y, soi, cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
     if grid_lines:
         ax.grid(which='both', alpha=0.5)
     cbar = figure.colorbar(plot, extend='both')
     cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
     cbar.ax.tick_params(labelsize=12)
+    # Dashed, labelled contours every step
     contours = ax.contour(x, y, soi, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
     _label_contours(ax, contours, step)
     return figure, ax
@@ -130,6 +137,8 @@ def plot_displacement(res, displacement, option, step):
     figure, ax = _axes(res, (6, 6), False)
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3, label='Crack')
 
+    # dp, ds: x and y components of the arrows; dt: the scalar used for the colours
+    # and contours; plot_params: colour limits and contour levels
     if displacement == 'ux':
         dp = dx ; ds = 0 ; dt = dx ; plot_params = boundaries_contours(dp, step) ; label = r'u$_x$ (m)'
     elif displacement == 'uy':
@@ -148,6 +157,7 @@ def plot_displacement(res, displacement, option, step):
         cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
         cbar.ax.tick_params(labelsize=12)
     elif option == 'contours':
+        # Colour map and labelled contours of dt (the label format depends on the step)
         plot = ax.pcolormesh(x, y, dt, cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
         cbar = figure.colorbar(plot, extend='both')
         cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
@@ -164,6 +174,7 @@ def plot_displacement(res, displacement, option, step):
     else:
         raise PlotError('Invalid option. Input "vectors" or "contours" instead.')
 
+    # Box with the driving stresses of the crack
     ax.text(0.97, 0.10, r'$\sigma_I$ = ' + str(round(crack['dpx']/1E6, 2))
             + ' MPa\n' + r'$\sigma_{II}$ = ' + str(round(crack['dpy']/1E6, 2)) + ' MPa',
             bbox=dict(fc='white', ec='black'),
@@ -184,6 +195,7 @@ def plot_stresses(res, stress, step):
         raise PlotError('Invalid stress "' + str(stress) + '". Input one of ' + ', '.join(sorted(STRESS_KEYS)))
     field, label = STRESS_KEYS[stress]
     _require(res, field)
+    # Drawn in MPa
     figure, ax = _scalar_field(res, res[field]/1e6, label, step, grid_lines=True)
     return figure
 
@@ -197,6 +209,7 @@ def plot_principal_stresses(res, stress, step):
     step: contour step, in MPa or degrees.
     """
     _require(res, 's1', 's3', 's1a')
+    # The field to draw (soi, 'stress of interest') and its colour-bar label
     if stress == 'principal':
         soi = res.s1/1e6 ; label = r'$\sigma_1$ (MPa)'
     elif stress == 'secondary':
@@ -220,6 +233,7 @@ def plot_stress_trajectories(res, planes):
     _require(res, 's1', 's3', 's1a', 's3a', 'coula')
     upper_tip, lower_tip = _crack_tips(res)
     x, y = res.x, res.y
+    # Magnitudes (MPa, for the colours) and orientations (radians) of sigma1 and sigma3
     p = res.s1/1e6 ; s = res.s3/1e6
     p_angles = np.deg2rad(res.s1a) ; s_angles = np.deg2rad(res.s3a)
     coula = res.coula
@@ -228,6 +242,8 @@ def plot_stress_trajectories(res, planes):
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3)
     _set_locators(ax)
 
+    # Headless segments centred on each node (trajectories), coloured by the magnitude:
+    # sigma1 in copper, sigma3 in cool colours
     plot1 = ax.quiver(x, y, np.cos(p_angles), np.sin(p_angles), p, headlength=0, pivot='middle', scale=0.0090,
                       units='xy', width=10, headwidth=1, cmap='copper_r')
     plot2 = ax.quiver(x, y, np.cos(s_angles), np.sin(s_angles), s, headlength=0, pivot='middle', scale=0.0090,
@@ -260,6 +276,7 @@ def plot_plane_stresses(res, stress, angle, step):
     """
     _require(res, 'sn', 'ss')
     meta = res.metadata ; crack = meta['crack']
+    # The field to draw, in MPa, and its label
     if stress == 'normal':
         soi = res.sn/1e6 ; label = r'$\sigma_n$ (MPa)'
     elif stress == 'shear':
@@ -268,6 +285,8 @@ def plot_plane_stresses(res, stress, angle, step):
         raise PlotError('Invalid stress. Input "normal" or "shear" instead.')
     figure, ax = _scalar_field(res, soi, label, step, locators=True)
 
+    # Box with the driving stresses and the material: single values for one layer,
+    # the list of values of every layer otherwise
     dpx, dpy = crack['dpx'], crack['dpy']
     if meta['n_layers'] == 1:
         ax.text(0.97, 0.14, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa ; ' + r'$\sigma_{II}$ = '
@@ -298,10 +317,12 @@ def plot_crack_opening(crack, v, E):
     crack.plot_mode_I_crack_displacements). crack: a crack object,
     v: Poisson's ratio, E: Young's modulus in Pa.
     """
+    # Wall displacements at 50 points along the crack, from one tip to the other
     disps = crack.mode_I_crack_displacements(v, E)
     h = crack.extent()
     length = np.linspace(-h/2, h/2, 50)
 
+    # ux of both walls as lines, uy of both walls as points; the legend gives the inputs
     figure = plt.figure(figsize=(7, 4))
     ax = figure.add_subplot(111, xlabel='y distance from crack center (m)', ylabel=r'u$_i$ (m)')
     ax.plot(length, disps[0], c='purple', ls='--', lw=2, label=r'u$_x$, x>0')
@@ -328,6 +349,7 @@ def plot_dynamic_step(step, downscaling):
     I-II (dodgerblue) and mode I (blue), as (cos b, sin b).
     """
     _require(step, 'failure_sn', 'above_failure', 'plane_mode_I')
+    # Fields and metadata of the step
     meta = step.metadata
     upper_tip, lower_tip = _crack_tips(step)
     x, y = step.x, step.y
@@ -363,6 +385,7 @@ def plot_dynamic_step(step, downscaling):
         ax.quiver(x, y, np.cos(ds[name]), np.sin(ds[name]),
                   headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color=colour)
     
+    # Box with the aperture or slip and the driving stresses reached at this step
     ax.text(0.97, 0.14, length_label + '·' + str(round(percentage, 4)) + ' = ' + str(round(length, 2)) + ' m\n' +
             r'$\sigma_I$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dx/1e6, 2)) + ' MPa\n' +
             r'$\sigma_{II}$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dy/1e6, 2)) + ' MPa',

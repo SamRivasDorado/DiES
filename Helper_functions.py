@@ -199,6 +199,7 @@ def true_min_max(array):
     Floats, the true minimum and maximum values in the array, after 
     ignoring invalid values
     """
+    # Copy of each row without its NaN values
     new_array=[]
     
     for row in array:
@@ -208,6 +209,8 @@ def true_min_max(array):
                 new_row.append(value)
         new_array.append(new_row)
 
+    # If every value is NaN there is nothing to compare: (0, 1) is returned,
+    # so that a colour scale can still be built
     try:
         minimum, maximum = min(np.concatenate(new_array)), max(np.concatenate(new_array)) 
     
@@ -233,6 +236,8 @@ def downsample_2darray(array,rate):
     """
     resampled_array=[]
     
+    # i and j count rows and columns from 1; a value is kept only where both
+    # are multiples of rate, and the rest become NaN (not drawn by quiver)
     i=1
     for row in array:
         j=1
@@ -262,6 +267,10 @@ def downsample_2darray(array,rate):
 ########################### Plotting functions ###########################
 
 def create_figure(x_limits,y_limits):
+    """
+    Empty figure with the model limits, axis labels in m and ticks every
+    1000 m (x) and 500 m (y), used by the dynamic model figures.
+    """
     
     figure=plt.figure(figsize=(6,4),tight_layout=True)
     ax=figure.add_subplot(111, xlim=x_limits, ylim=y_limits)
@@ -335,12 +344,17 @@ def boundaries_contours(values,step):
     contours method within matplotlib.
     """
     
+    # A 2D array is flattened into a single list of values
     if values.ndim!=1:
         values=np.concatenate(values)
         
+    # The 1st and 99th percentiles are used as colour limits, so that the
+    # extreme values next to the crack tips do not saturate the colour scale
     p99=np.percentile(values,99)
     p1=np.percentile(values,1)
         
+    # Contour levels every step between the limits; for steps of 1 or more,
+    # the first level is rounded down to a multiple of 5 (or starts at 0)
     if step<1:
         new_contours=np.arange(p1,p99,step)
 
@@ -426,9 +440,11 @@ def normalize_lengths_frac(lengths):
     if 'ndarray' not in str(type(lengths)):
         lengths=np.asarray(lengths)
         
+    # Cumulative distance of each measurement and the midpoint of the fracture
     cumlengths=np.cumsum(lengths)
     center=np.average((0,cumlengths[-1]))
     
+    # Distances relative to the midpoint: negative before it, positive after it
     normalized_lengths=[]
     
     for cl in cumlengths:
@@ -456,11 +472,13 @@ def normalize_lengths_graben(distances,elevations):
     if 'ndarray' not in str(type(distances)):
         distances=np.asarray(distances)
             
+    # The centre of the graben is the distance of the deepest point
     center_elev=min(elevations)
     for d,elev in zip(distances,elevations):
         if elev==center_elev:
             center_distance=d
             
+    # Distances relative to that centre: negative on one side, positive on the other
     normalized_lengths=[]
     
     for distance in distances:
@@ -589,12 +607,15 @@ def faults_above_crack(grid, stress, crack):
     that name is kept as an alias.
     """
     
+    # x and y coordinates of the points of each fault
     left_fault=[[],[]] ; right_fault=[[],[]]
     
     for row_x,row_y,row_stress in zip(grid[0],grid[1], stress):
+        # |shear stress| -> (x, y) of the nodes left and right of the crack in this row
         left={}
         right={}
         
+        # Rows where the stress is zero everywhere are skipped
         i=0
         for stress in row_stress:
             if stress==0:
@@ -603,6 +624,8 @@ def faults_above_crack(grid, stress, crack):
         if len(row_stress)==i:
             continue
         
+        # Only the rows above the upper tip: in each one, the node of maximum
+        # |shear stress| on each side is taken as a point of the fault
         elif row_y[0]>crack.up_tip()[-1]:
             for x,y,stress in zip(row_x,row_y,row_stress):
                     if x<crack.up_tip()[0]:

@@ -102,8 +102,10 @@ class DiESResults(object):
     """
 
     def __init__(self, x, y, fields, metadata=None, units=None):
+        # Node coordinates of the grid, as float arrays
         self.x = np.asarray(x, dtype=float)
         self.y = np.asarray(y, dtype=float)
+        # Every field must be a 2D array with the shape of the grid
         self.fields = {}
         for name, values in fields.items():
             values = np.asarray(values)
@@ -111,7 +113,9 @@ class DiESResults(object):
                 raise ValueError('Field ' + name + ' has shape ' + str(values.shape)
                                  + ', but the grid has shape ' + str(self.x.shape))
             self.fields[name] = values
+        # A copy of the metadata, so that later changes to the input dict do not leak in
         self.metadata = dict(metadata or {})
+        # Units from FIELD_INFO ('' for unknown fields), overridden by those given
         self.units = {name: FIELD_INFO.get(name, ('', ''))[0] for name in self.fields}
         if units:
             self.units.update(units)
@@ -126,9 +130,11 @@ class DiESResults(object):
         raise AttributeError("DiESResults has no field or attribute '" + name + "'")
 
     def __getitem__(self, name):
+        # res['s1']: a field by name
         return self.fields[name]
 
     def __contains__(self, name):
+        # 's1' in res: whether the field exists
         return name in self.fields
 
     def names(self):
@@ -137,6 +143,7 @@ class DiESResults(object):
 
     @property
     def shape(self):
+        # Shape of the grid: (number of y nodes, number of x nodes)
         return self.x.shape
 
     def x_nodes(self):
@@ -164,6 +171,7 @@ class DiESResults(object):
         entry per field (all fields, or only those in names).
         """
         names = self.names() if names is None else list(names)
+        # Row and column of the node closest to (x, y)
         distance = np.hypot(self.x - x, self.y - y)
         i, j = np.unravel_index(np.nanargmin(distance), distance.shape)
         values = {'x': float(self.x[i, j]), 'y': float(self.y[i, j])}
@@ -183,8 +191,10 @@ class DiESResults(object):
         orientation wraps around +/-90; use probe() or the nodes for those.
         """
         names = self.names() if names is None else list(names)
+        # n points along A -> B, as fractions t of the segment
         t = np.linspace(0, 1, int(n))
         xs = A[0] + t*(B[0] - A[0]) ; ys = A[1] + t*(B[1] - A[1])
+        # The interpolator takes (y, x) pairs, in the order of the array axes (rows, columns)
         points = np.column_stack([ys, xs])
         out = {'distance': t*np.hypot(B[0] - A[0], B[1] - A[1]), 'x': xs, 'y': ys}
         for name in names:
@@ -208,6 +218,8 @@ class DiESResults(object):
         Saves the results to a compressed .npz file: the coordinates, every
         field, and the units and metadata as JSON text. Reopen with load().
         """
+        # Fields are stored with the prefix 'field_'; units and metadata as JSON text,
+        # so that the file can be read without pickle
         arrays = {'x': self.x, 'y': self.y}
         for name, values in self.fields.items():
             arrays['field_' + name] = values
@@ -219,6 +231,7 @@ class DiESResults(object):
     def load(cls, path):
         """Opens results saved with save()."""
         with np.load(path, allow_pickle=False) as data:
+            # Every array saved as 'field_<name>' becomes the field <name>
             fields = {key[len('field_'):]: data[key] for key in data.files if key.startswith('field_')}
             units = json.loads(str(data['units_json']))
             metadata = json.loads(str(data['metadata_json']))
@@ -230,6 +243,7 @@ class DiESResults(object):
         names). The header gives the units in brackets, e.g. 's1 [Pa]'.
         """
         names = self.names() if names is None else list(names)
+        # One column per quantity, flattened so that each row is one node
         columns = [self.x.ravel(), self.y.ravel()] + [self.fields[name].ravel() for name in names]
         header = ['x [m]', 'y [m]'] + [name + ' [' + self.units.get(name, '') + ']' for name in names]
         with open(path, 'w', newline='') as f:
@@ -302,6 +316,7 @@ class DynamicResults(object):
         """
         first = np.zeros(self.steps[0].shape, dtype=int)
         for k, step in enumerate(self.steps, start=1):
+            # Nodes failed at this step; only those not yet marked get the number k
             failed = np.isin(step['failure_mode'].astype(str), FAILED_MODES)
             first = np.where((first == 0) & failed, k, first)
         return first
@@ -310,6 +325,7 @@ class DynamicResults(object):
         """Saves every step to one compressed .npz file; reopen with load()."""
         if not self.steps:
             raise ValueError('There are no steps to save')
+        # All steps share the grid; each field is stored as 'step<k>_<name>'
         arrays = {'x': self.steps[0].x, 'y': self.steps[0].y}
         for k, step in enumerate(self.steps):
             for name, values in step.fields.items():
@@ -328,6 +344,7 @@ class DynamicResults(object):
             units = json.loads(str(data['units_json']))
             step_meta = json.loads(str(data['step_metadata_json']))
             steps = []
+            # Rebuild one DiESResults per step from its 'step<k>_' arrays
             for k in range(n):
                 prefix = 'step' + str(k) + '_'
                 fields = {key[len(prefix):]: data[key] for key in data.files if key.startswith(prefix)}
