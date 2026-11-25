@@ -8,7 +8,8 @@ global X–Y axes. It also records the sign conventions and the verification of 
 ## Change log
 
 Every change to the calculation of coordinates, angles and orientations, with the date it was
-found and fixed and the commit on branch `update-bools-crack-naming` of `SamRivasDorado/DiES`.
+found and fixed and the commit on branch `phase0-update-bools-crack-naming` (named
+`update-bools-crack-naming` until 2026-11-25) of `SamRivasDorado/DiES`.
 Dates are local time in Madrid (CET).
 
 | Date | Commit | Change | Section |
