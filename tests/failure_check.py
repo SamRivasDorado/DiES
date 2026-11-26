@@ -70,11 +70,11 @@ def run_case(name):
     title, ci, dx, dy, dz = CASES[name]
     steps = investigation_range(name, STEP_MPA)
     dyn = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G_EARTH, True, steps, XLIMS, YLIMS, RESOLUTION)
-    E, nu, rho, cfi, T = MODEL_INPUTS
-    m = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, rho, cfi, T, G_EARTH)
+    E, nu, rho, friction, T = MODEL_INPUTS
+    m = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, rho, friction, T, G_EARTH)
     first = dyn.failure_step()
     last = dyn[-1]
-    phi = np.degrees(np.arctan(cfi))
+    phi = np.degrees(np.arctan(friction))
     checks = {key: [0, 0] for key in ('band', 'mode', 'direction', 'values', 'sign_and_angle', 'dip')}
     worst = {'values': 0.0, 'direction': 0.0}
     examples = {}
@@ -88,10 +88,10 @@ def run_case(name):
         res, disc = step_stresses(m, ci, step)
         nodes = np.argwhere((first == k) & np.isin(last['failure_mode'], FAILED))
         if len(nodes):
-            ratio, csn, css, c2t, cmode = failure_contact(res.s1, res.s3, cfi, T)
+            ratio, csn, css, c2t, cmode = failure_contact(res.s1, res.s3, friction, T)
             prev_ratio = None
             if previous is not None:
-                prev_ratio = failure_contact(previous.s1, previous.s3, cfi, T)[0]
+                prev_ratio = failure_contact(previous.s1, previous.s3, friction, T)[0]
         for i, j in nodes:
             mode = last['failure_mode'][i, j]
             jumped = last['failure_jumped'][i, j] == 1
@@ -149,10 +149,10 @@ def draw_maps(name, dyn, out):
     x, y = last.x, last.y
     code = np.vectorize(MODES.index)(last['failure_mode'])
     first = dyn.failure_step().astype(float)
-    E, nu, rho, cfi, T = MODEL_INPUTS
-    m = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, rho, cfi, T, G_EARTH)
+    E, nu, rho, friction, T = MODEL_INPUTS
+    m = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, rho, friction, T, G_EARTH)
     res, _ = step_stresses(m, ci, last)
-    ratio = failure_contact(res.s1, res.s3, cfi, T)[0]
+    ratio = failure_contact(res.s1, res.s3, friction, T)[0]
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9), sharex=True, sharey=True)
     ax = axes[0, 0]
@@ -194,7 +194,7 @@ def draw_maps(name, dyn, out):
 def draw_mohr(name, dyn, m, examples, out):
     """Mohr circles of one node per mode (median failure step), before and at failure."""
     title, ci, *_ = CASES[name]
-    E, nu, rho, cfi, T = MODEL_INPUTS
+    E, nu, rho, friction, T = MODEL_INPUTS
     k_t = -T/1e6
     keys = [key for key in FAILED + ['jumped'] if key in examples]
     ncols = 3
@@ -214,7 +214,7 @@ def draw_mohr(name, dyn, m, examples, out):
             t = np.linspace(0, np.pi, 200)
             ax.plot(c + r*np.cos(t), r*np.sin(t), style, c='k', lw=1.4,
                     label='step %d (%.2f MPa)' % (kk, kk*STEP_MPA))
-        ratio, csn, css, c2t, cmode = (np.asarray(v).item() for v in failure_contact(p*1e6, s*1e6, cfi, T))
+        ratio, csn, css, c2t, cmode = (np.asarray(v).item() for v in failure_contact(p*1e6, s*1e6, friction, T))
         r_c = r/ratio
         for f in (1 - FAILURE_TOLERANCE, 1 + FAILURE_TOLERANCE):
             ax.plot(c + f*r_c*np.cos(t), f*r_c*np.sin(t), c='tab:green', lw=0.7, alpha=0.7)
@@ -223,7 +223,7 @@ def draw_mohr(name, dyn, m, examples, out):
         sg = np.linspace(-k_t, 0, 100)
         sl = np.linspace(0, c + 2*r, 100)
         ax.plot(sg, np.sqrt(4*k_t*(sg + k_t)), c='darkred', lw=1.8)
-        ax.plot(sl, 2*k_t + cfi*sl, c='tomato', lw=1.8)
+        ax.plot(sl, 2*k_t + friction*sl, c='tomato', lw=1.8)
         ax.plot(csn, css, '*', ms=13, mfc='orange', mec='k', label='contact (σn=%.2f, τ=%.2f)' % (csn, css))
         ax.plot(last['failure_sn'][i, j], last['failure_ss'][i, j], 'o', ms=6, mfc='none', mec='b',
                 label='recorded (2θ=%.1f°)' % (2*last['failure_theta'][i, j]))

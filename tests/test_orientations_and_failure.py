@@ -22,7 +22,7 @@ from Helper_functions import G
 
 warnings.filterwarnings('ignore')
 
-E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
+E, NU, RHO, FRICTION, T = 30e9, 0.25, 2900, 0.57, -1.5e6
 # Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
 G_EARTH = 9.81
 CASES = {
@@ -36,7 +36,7 @@ def setup(up, lo, aperture, dy, cell=(200, 150)):
     b = np.hypot(up[0] - lo[0], up[1] - lo[1])
     px = aperture*G(E, NU)/(b*(1 - NU)) if aperture else 0
     disc = crack(up, lo, px, dy, 0)
-    m = model((-5000, 5000), (-6000, -10), cell[0], cell[1], 500, E, NU, RHO, CFI, T, G_EARTH)
+    m = model((-5000, 5000), (-6000, -10), cell[0], cell[1], 500, E, NU, RHO, FRICTION, T, G_EARTH)
     S = m.model_stresses(disc, 0, 0, True)
     sxx, syy, sxy = -S[0], -S[1], -S[3]                     # compression positive
     tensor = np.stack([np.stack([sxx, sxy], -1), np.stack([sxy, syy], -1)], -2)
@@ -62,7 +62,7 @@ def test_principal_orientations_match_eigenvectors():
 def test_lithostatic_sigma1_is_vertical():
     # No crack loading and no remote stresses: sigma1 must be vertical (90) everywhere
     disc = crack((0, -1000), (0, -5000), 0, 0, 0)
-    m = model((-5000, 5000), (-6000, -10), 500, 500, 500, E, NU, RHO, CFI, T, G_EARTH)
+    m = model((-5000, 5000), (-6000, -10), 500, 500, 500, E, NU, RHO, FRICTION, T, G_EARTH)
     s1, s3, s1a, s3a = m.principal_stresses(disc, 0, 0, True)
     assert np.allclose(s1a, 90) and np.allclose(s3a, 0)
 
@@ -84,7 +84,7 @@ def test_failure_planes_resolve_to_the_mohr_tangent_point():
         s1, s3, s1a, s3a = m.principal_stresses(disc, 0, 0, True)
         x = m.grid()[0] ; c = disc.c() ; checked = 0
         for i, j in zip(*np.nonzero(np.isfinite(s1))):
-            sn, ss, two_theta, mode = evaluate_stress_state(s1[i, j], s3[i, j], CFI, T, 'values')
+            sn, ss, two_theta, mode = evaluate_stress_state(s1[i, j], s3[i, j], FRICTION, T, 'values')
             if mode in ('Below', 'Above', 'Mode I'):
                 continue
             side = -1 if x[i, j] <= c[0] else 1
@@ -104,18 +104,18 @@ def test_failure_planes_resolve_to_the_mohr_tangent_point():
 def test_tensile_strength_sign():
     # Stable lithostatic states must be below failure with T < 0.
     # With v = 0.25 the lithostatic state has s3 = s1/3, so r = c/2 while the critical
-    # radius on the Coulomb line tends to cfi*c/sqrt(1 + cfi^2) = 0.495c: r/r_c tends to
+    # radius on the Coulomb line tends to friction*c/sqrt(1 + friction^2) = 0.495c: r/r_c tends to
     # ~1.01 with depth. With Earth gravity it reaches the lower edge of the failure band
     # (0.965) at ~6.0 km (on Mars, at ~16 km), so depths up to 5 km are checked.
     for depth in (300, 1000, 3000, 5000):
         s1 = RHO*G_EARTH*depth ; s3 = s1*NU/(1 - NU)
-        assert evaluate_stress_state(s1, s3, CFI, T, 'values')[3] == 'Below', depth
+        assert evaluate_stress_state(s1, s3, FRICTION, T, 'values')[3] == 'Below', depth
     # Tension beyond |T| fails; tension below |T| with a small circle does not
-    assert evaluate_stress_state(5e6, -1.6e6, CFI, T, 'values')[3] == 'Above'
-    assert evaluate_stress_state(1e6, -0.5e6, CFI, T, 'values')[3] == 'Below'
+    assert evaluate_stress_state(5e6, -1.6e6, FRICTION, T, 'values')[3] == 'Above'
+    assert evaluate_stress_state(1e6, -0.5e6, FRICTION, T, 'values')[3] == 'Below'
     # T must be negative
     try:
-        evaluate_stress_state(5e6, 1e6, CFI, 1.5e6, 'values')
+        evaluate_stress_state(5e6, 1e6, FRICTION, 1.5e6, 'values')
     except InputError:
         return
     raise AssertionError('no InputError for T > 0')
@@ -131,13 +131,13 @@ def test_arrays_match_scalar_calls():
     p, s = np.maximum(a, b), np.minimum(a, b)
     p[0, 0] = s[0, 0] = 4e6
     p[0, 1] = np.nan
-    # cfi and T per node, as in a grid with layers
-    cfi = np.where(np.arange(12)[:, None] < 6, 0.57, 0.6) * np.ones((12, 9))
+    # friction and T per node, as in a grid with layers
+    friction = np.where(np.arange(12)[:, None] < 6, 0.57, 0.6) * np.ones((12, 9))
     t = np.where(np.arange(12)[:, None] < 6, -1.5e6, -2e6) * np.ones((12, 9))
-    sn, ss, two_theta, mode = evaluate_stress_state(p, s, cfi, t, 'values')
+    sn, ss, two_theta, mode = evaluate_stress_state(p, s, friction, t, 'values')
     assert sn.shape == ss.shape == two_theta.shape == mode.shape == p.shape
     for idx in np.ndindex(p.shape):
-        ref = evaluate_stress_state(p[idx], s[idx], cfi[idx], t[idx], 'values')
+        ref = evaluate_stress_state(p[idx], s[idx], friction[idx], t[idx], 'values')
         assert mode[idx] == ref[3], idx
         for value, expected in zip((sn[idx], ss[idx], two_theta[idx]), ref[:3]):
             assert np.array_equal(value, expected, equal_nan=True), idx

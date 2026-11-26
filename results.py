@@ -44,8 +44,8 @@ FIELD_INFO = {
     'nu': ('', "Poisson's ratio"),
     'density': ('kg m-3', 'density'),
     'cohesion': ('Pa', 'cohesion, implicit as 2|T|'),
-    'cfi': ('', 'coefficient of internal friction'),
-    'coula': ('rad', 'angle between sigma1 and the optimal shear planes, 0.5*arctan(1/cfi)'),
+    'friction': ('', 'coefficient of internal friction'),
+    'coula': ('rad', 'angle between sigma1 and the optimal shear planes, 0.5*arctan(1/friction)'),
     'T': ('Pa', 'tensile strength (negative)'),
     # Displacements
     'ux': ('m', 'displacement along x'),
@@ -87,6 +87,17 @@ FIELD_INFO = {
 
 # Failure modes that mean that a node has failed (kept in later steps)
 FAILED_MODES = ('Mode I', 'Mixed-mode I-II', 'Mode II - tension-compression', 'Mode II - compression', 'Above')
+
+
+# Names changed since results were first saved: files written before the change are
+# read with the new names (Nov 2026: cfi -> friction, the coefficient of internal friction)
+RENAMED_FIELDS = {'cfi': 'friction'}
+RENAMED_METADATA = {'layers_cfi': 'layers_friction'}
+
+
+def _renamed(mapping, names):
+    """A copy of a dict with its old keys replaced by the new ones (RENAMED_*)."""
+    return {mapping.get(key, key): value for key, value in names.items()}
 
 
 class DiESResults(object):
@@ -237,7 +248,10 @@ class DiESResults(object):
             fields = {key[len('field_'):]: data[key] for key in data.files if key.startswith('field_')}
             units = json.loads(str(data['units_json']))
             metadata = json.loads(str(data['metadata_json']))
-            return cls(data['x'], data['y'], fields, metadata, units)
+            x, y = data['x'], data['y']
+        # Files saved before a field or metadata key was renamed (e.g. cfi -> friction)
+        return cls(x, y, _renamed(RENAMED_FIELDS, fields), _renamed(RENAMED_METADATA, metadata),
+                   _renamed(RENAMED_FIELDS, units))
 
     def to_csv(self, path, names=None):
         """
@@ -350,7 +364,9 @@ class DynamicResults(object):
             for k in range(n):
                 prefix = 'step' + str(k) + '_'
                 fields = {key[len(prefix):]: data[key] for key in data.files if key.startswith(prefix)}
-                steps.append(DiESResults(data['x'], data['y'], fields, step_meta[k], units[k]))
+                # Files saved before a field or metadata key was renamed (e.g. cfi -> friction)
+                steps.append(DiESResults(data['x'], data['y'], _renamed(RENAMED_FIELDS, fields),
+                                         _renamed(RENAMED_METADATA, step_meta[k]), _renamed(RENAMED_FIELDS, units[k])))
             return cls(steps, json.loads(str(data['metadata_json'])))
 
 

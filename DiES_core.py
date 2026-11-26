@@ -626,7 +626,7 @@ class crack(object):
 
 
 class model(object):
-    def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_cfi,layers_T, g):
+    def __init__(self, x_limits,y_limits,x_cellsize,y_cellsize,y_position_layers,layers_E,layers_v,layers_d,layers_friction,layers_T, g):
         """
         Parameters
         --------------
@@ -659,8 +659,9 @@ class model(object):
         layers_d: an array-like object with floats/ints defining the density
         of each of the layers,in kg m-3
         
-        layers_cfi: an array-like object with floats/ints defining the coefficient of 
+        layers_friction: an array-like object with floats/ints defining the coefficient of 
         internal friction of each of the layers, unitless
+        (named layers_cfi until Nov 2026)
         
         layers_T: an array-like object with floats/ints defining the tensile
         strength of each of the layers, in Pa. Negative, because tension is
@@ -677,13 +678,13 @@ class model(object):
         self.x_cellsize=x_cellsize ; self.y_cellsize=y_cellsize
         self.y_position_layers=y_position_layers
         self.layers_E=layers_E ; self.layers_v=layers_v ; self.layers_d=layers_d
-        self.layers_cfi=layers_cfi; self.layers_T=layers_T
+        self.layers_friction=layers_friction; self.layers_T=layers_T
         
         # Cohesion implicit in the modified Griffith criterion: C = 2|T|
         self.layers_c=2*np.abs(np.asarray(self.layers_T,dtype=float))
         
         # The coulomb angle is defined implicitly after mu for each layer
-        self.layers_coula=0.5*np.arctan(1/np.asarray(self.layers_cfi,dtype=float))
+        self.layers_coula=0.5*np.arctan(1/np.asarray(self.layers_friction,dtype=float))
     
         # self.layers_m=layers_m
         self.g=g
@@ -758,7 +759,7 @@ class model(object):
         
         properties=[(self.layers_E,'layers_E'),(self.layers_v,'layers_v'),
                     (self.layers_d,'layers_d'),(self.layers_c,'layers_c'),
-                    (self.layers_cfi,'layers_cfi'),(self.layers_coula,'layers_coula'),
+                    (self.layers_friction,'layers_friction'),(self.layers_coula,'layers_coula'),
                     (self.layers_T,'layers_T')]
         
         values=[self.layer_values(prop,name)[index] for prop,name in properties]
@@ -793,7 +794,7 @@ class model(object):
               'n_layers':self.n_layers(), 'y_position_layers':as_list(self.y_position_layers),
               'layers_E':as_list(self.layers_E), 'layers_v':as_list(self.layers_v),
               'layers_d':as_list(self.layers_d), 'layers_c':as_list(self.layers_c),
-              'layers_cfi':as_list(self.layers_cfi), 'layers_coula':as_list(self.layers_coula),
+              'layers_friction':as_list(self.layers_friction), 'layers_coula':as_list(self.layers_coula),
               'layers_T':as_list(self.layers_T), 'g':float(self.g)}
         # The crack, its driving stresses and the loading, when given
         if crack is not None:
@@ -820,7 +821,7 @@ class model(object):
         Returns
         -------
         A DiESResults object (results.py) with the material at each node
-        (E, nu, density, cohesion, cfi, coula, T) and, as requested,
+        (E, nu, density, cohesion, friction, coula, T) and, as requested,
         ux, uy, uz; sxx, syy, sav, sxy, sxz, szz, tmax (tension positive);
         s1, s3, s1a, s3a and sn, ss (compression positive).
         The values are the same as those of model_displacements,
@@ -831,7 +832,7 @@ class model(object):
         # some figures, e.g. coula by the stress trajectories)
         grid=self.grid()
         fields={'E':grid[2], 'nu':grid[3], 'density':grid[4], 'cohesion':grid[5],
-                'cfi':grid[6], 'coula':grid[7], 'T':grid[8]}
+                'friction':grid[6], 'coula':grid[7], 'T':grid[8]}
         
         if displacements:
             fields['ux'], fields['uy'], fields['uz'] = self.model_displacements(crack)
@@ -865,14 +866,14 @@ class model(object):
                     'E = '+str(self.layer_values(self.layers_E,'layers_E')[0]/1E9)+' GPa\n'+'v = '+str(self.layer_values(self.layers_v,'layers_v')[0])
                     +'\n'+r'$\rho$ = '+str(self.layer_values(self.layers_d,'layers_d')[0])+r' kg/m$^3$'
                     +'\n'+r'C$_o$ = '+str(self.layer_values(self.layers_c,'layers_c')[0]/1e6)+' MPa'
-                    +'\n'+r"$\mu'$ = "+str(self.layer_values(self.layers_cfi,'layers_cfi')[0]),
+                    +'\n'+r"$\mu'$ = "+str(self.layer_values(self.layers_friction,'layers_friction')[0]),
                     bbox=dict(fc='white', ec='black'),
                     horizontalalignment='right', verticalalignment='top',
                     transform=ax.transAxes,fontsize=14, zorder=5)
         
         else:
             i=0
-            for y,E,v,d,c,m in zip(self.y_position_layers[1:],self.layers_E, self.layers_v, self.layers_d, self.layers_c, self.layers_cfi):
+            for y,E,v,d,c,m in zip(self.y_position_layers[1:],self.layers_E, self.layers_v, self.layers_d, self.layers_c, self.layers_friction):
                 x=self.x_limits[-1]-0.05*points_distance((self.x_limits[0],0),(self.x_limits[-1],0))
                 y=y-0.05*points_distance((self.x_limits[-1],self.y_position_layers[i]),(self.x_limits[-1],y))
                 i=i+1
@@ -1143,7 +1144,7 @@ class model(object):
         Parameters
         ----------
         crack: a crack object,
-        planes: a bool. If True, plots the optimal shear planes defined by cfi.
+        planes: a bool. If True, plots the optimal shear planes defined by friction.
         If False, it does not do this. It must be a real boolean, not a str.
         s11 : array-like, the remote stress acting along the x axis, in Pa,
         s11 : array-like, the remote stress acting along the y axis, in Pa,
@@ -1153,7 +1154,7 @@ class model(object):
         Returns
         -------
         A figure plotting the trajectories of the principal stresses and
-        optionally the orientation of the optimal shear planes defined by cfi.
+        optionally the orientation of the optimal shear planes defined by friction.
         
         """
         # Failing early, before the stresses are calculated, if the input is invalid
@@ -1183,7 +1184,7 @@ class model(object):
         """
         grid=self.grid()
         x, y = grid[0], grid[1] 
-        s, cfi, coula = grid[5], grid[6], grid[7]
+        s, friction, coula = grid[5], grid[6], grid[7]
         
         
         ########### With the principal stresses ###########

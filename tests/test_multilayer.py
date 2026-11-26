@@ -28,12 +28,12 @@ ONE_LAYER = [30e9, 0.25, 2900, 0.57, -1.5e6]
 
 
 def test_layered_inputs_converts_top_down_layers():
-    bounds, E, v, d, cfi, T = layered_inputs([[20e9, 50e9], 0.25, [2500, 2900], 0.6, [-1e6, -3e6]], [0, -2000])
+    bounds, E, v, d, friction, T = layered_inputs([[20e9, 50e9], 0.25, [2500, 2900], 0.6, [-1e6, -3e6]], [0, -2000])
     # Ascending boundaries, values from the deepest layer up
     assert list(bounds[1:]) == [-2000, 0] and bounds[0] < -2000
     assert list(E) == [50e9, 20e9] and list(d) == [2900, 2500] and list(T) == [-3e6, -1e6]
-    assert list(v) == [0.25, 0.25] and list(cfi) == [0.6, 0.6]      # one number: the same in every layer
-    m = model(XLIMS, YLIMS, RES[0], RES[1], bounds, E, v, d, cfi, T, G_EARTH)
+    assert list(v) == [0.25, 0.25] and list(friction) == [0.6, 0.6]      # one number: the same in every layer
+    m = model(XLIMS, YLIMS, RES[0], RES[1], bounds, E, v, d, friction, T, G_EARTH)
     grid = m.grid()
     assert np.all(grid[2][grid[1] >= -2000] == 20e9) and np.all(grid[2][grid[1] < -2000] == 50e9)
     # One layer: plain numbers, as until Nov 2026

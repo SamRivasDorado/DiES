@@ -16,6 +16,8 @@ History of the reference:
   - 25 Nov 2026, same branch: recomputed with Earth gravity (g = 9.81 m/s^2, Sam's
     convention for the tests from then on; Mars, 3.71, until then). Same code
     (commit 8c8f02a); only the cases changed.
+  - 26 Nov 2026: the field cfi renamed friction (the keys static__*__cfi of the
+    reference renamed to static__*__friction; the data are the same).
 
 The comparison is bit by bit (NaN equal to NaN, same NaN pattern), except for
 the outputs listed in TOLERANCES. A deliberate change of the results must update

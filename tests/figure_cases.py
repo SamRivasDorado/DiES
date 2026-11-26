@@ -85,9 +85,9 @@ def render_all(code_root, out):
         plt.close('all')
 
     # 5. Mohr circles
-    cfi, T = MODEL_INPUTS[3], MODEL_INPUTS[4]
+    friction, T = MODEL_INPUTS[3], MODEL_INPUTS[4]
     for k, (p, s) in enumerate(MOHR_STATES):
-        fig = evaluate_stress_state(p, s, cfi, T, 'plot')
+        fig = evaluate_stress_state(p, s, friction, T, 'plot')
         save(fig if fig is not None else plt.gcf(), out, 'mohr__%d' % k)
     print('Rendered', len(os.listdir(out)), 'figures to', out)
 

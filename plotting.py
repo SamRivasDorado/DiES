@@ -323,7 +323,7 @@ def plot_plane_stresses(res, stress, angle, step=None):
                 + str(round(dpy/1E6, 2)) + ' MPa\n'
                 + r'$\alpha$ = ' + str(angle) + '° ; ' + r'$\rho$ = ' + str(np.float64(meta['layers_d'][0])) + ' kg m$^3$'
                 + '\nC = ' + str(np.float64(meta['layers_c'][0])/1e6) + ' MPa ; ' + r"$\mu'$ = "
-                + str(np.float64(meta['layers_cfi'][0])) + '; '
+                + str(np.float64(meta['layers_friction'][0])) + '; '
                 + r'$\theta_{opt}$ = ' + str(round(90 - np.degrees(np.float64(meta['layers_coula'][0])), 2)) + '°',
                 bbox=dict(fc='white', ec='black'),
                 horizontalalignment='right', verticalalignment='bottom',
@@ -333,7 +333,7 @@ def plot_plane_stresses(res, stress, angle, step=None):
                 + str(round(dpy/1E6, 2)) + ' MPa\n'
                 + r'$\alpha$ = ' + str(angle) + '°'
                 + '\nC = ' + str(np.asarray(meta['layers_c'], dtype=float)/1e6) + ' MPa ; ' + r"$\mu'$ = "
-                + str(np.asarray(meta['layers_cfi'], dtype=float)) + '; '
+                + str(np.asarray(meta['layers_friction'], dtype=float)) + '; '
                 + r'$\theta_{opt}$ = ' + str(np.round(90 - np.degrees(np.asarray(meta['layers_coula'])), 2)) + '°',
                 bbox=dict(fc='white', ec='black'),
                 horizontalalignment='right', verticalalignment='bottom',
@@ -463,7 +463,7 @@ def plot_dynamic_step(step, downscaling, color_range=None):
     return figure
 
 
-def plot_mohr_circle(p, s, cfi, T):
+def plot_mohr_circle(p, s, friction, T):
     """
     Mohr circle of a stress state with the modified Griffith (parabola) and
     Coulomb (line) criteria, and the point of failure if there is one
@@ -471,14 +471,14 @@ def plot_mohr_circle(p, s, cfi, T):
     in Nov 2026). The values come from evaluate_stress_state(..., 'values').
     
     p, s: maximum and minimum compressive principal stresses, in Pa (p > s),
-    cfi: coefficient of internal friction, T: tensile strength in Pa (< 0).
+    friction: coefficient of internal friction, T: tensile strength in Pa (< 0).
     The diagram is drawn in MPa, compression positive.
     """
     # Imported here: Failure_Determination imports DiES_core, which imports this module
     from Failure_Determination import evaluate_stress_state
     from Helper_functions import circle_eq_y
     
-    sn, ss, angle, mode = evaluate_stress_state(p, s, cfi, T, 'values')
+    sn, ss, angle, mode = evaluate_stress_state(p, s, friction, T, 'values')
     if mode == 'Singular' or p == s:
         raise PlotError('Cannot draw a Mohr circle for this state (mode ' + mode + ', p = ' + str(p) + ', s = ' + str(s) + ')')
     
@@ -514,9 +514,9 @@ def plot_mohr_circle(p, s, cfi, T):
     ax.plot(x_values_G, y_values, ls='--', lw=3, c='darkred')
     y_values = -(abs(4*T*(x_values_G - T)))**0.5
     ax.plot(x_values_G, y_values, ls='--', lw=3, c='darkred')
-    y_values = -2*T + cfi*x_values_MC
+    y_values = -2*T + friction*x_values_MC
     ax.plot(x_values_MC, y_values, ls='--', lw=3, c='tomato')
-    y_values = -2*T + cfi*x_values_MC
+    y_values = -2*T + friction*x_values_MC
     ax.plot(x_values_MC, -y_values, ls='--', lw=3, c='tomato')
     
     # The contact point, only if there is any kind of failure

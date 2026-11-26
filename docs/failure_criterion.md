@@ -33,7 +33,7 @@ is implicitly 2k.
 
 - **Mohr circle:** centre c = (p + s)/2, radius r = (p − s)/2.
 - **Griffith parabola** (tension side, −k ≤ σn < 0): τ² = 4k(σn + k). Vertex at (−k, 0) = (T, 0).
-- **Coulomb line** (σn ≥ 0): τ = 2k + μ′σn, with μ′ the coefficient of internal friction (`cfi`).
+- **Coulomb line** (σn ≥ 0): τ = 2k + μ′σn, with μ′ the coefficient of internal friction (`friction`).
 - The two meet at (0, 2k). The envelope has a kink there: the parabola arrives with slope 1 and
   the line leaves with slope μ′.
 
@@ -97,7 +97,7 @@ from there on the line is.
 
 If the centre is at or beyond the vertex (c ≤ T), r_c ≤ 0: any circle is beyond failure.
 
-Code: `failure_contact(p, s, cfi, T)` in `Failure_Determination.py` returns r/r_c, the contact
+Code: `failure_contact(p, s, friction, T)` in `Failure_Determination.py` returns r/r_c, the contact
 point, 2θ and the mode of the contact, for numbers or arrays.
 
 ## 4. Classification of a state of stress
@@ -213,11 +213,11 @@ consistent with the band, the contact mode and the stresses resolved on their pl
 
 | Function (`Failure_Determination.py`) | What it does |
 |---|---|
-| `failure_contact(p, s, cfi, T)` | r/r_c, contact point, 2θ and mode of the contact (Section 3). Numbers or arrays. |
-| `evaluate_stress_states(p, s, cfi, T)` | Classification of every node (Section 4); arrays. |
-| `evaluate_stress_state(p, s, cfi, T, output)` | One state (`'values'` or `'plot'`), or arrays with `'values'`. |
+| `failure_contact(p, s, friction, T)` | r/r_c, contact point, 2θ and mode of the contact (Section 3). Numbers or arrays. |
+| `evaluate_stress_states(p, s, friction, T)` | Classification of every node (Section 4); arrays. |
+| `evaluate_stress_state(p, s, friction, T, output)` | One state (`'values'` or `'plot'`), or arrays with `'values'`. |
 | `FAILURE_TOLERANCE` | Half-width of the band of r/r_c (0.035). |
-| `evaluate_stress_state_sampling(p, s, cfi, T)` | The algorithm used until Nov 2026, for comparison. |
+| `evaluate_stress_state_sampling(p, s, friction, T)` | The algorithm used until Nov 2026, for comparison. |
 | `failure_plane_orientation(s1a, theta, mode, side)` | Orientation of the failure plane (unchanged). |
 
 `compute_dynamic_model` (`Modeling_functions.py`) uses `evaluate_stress_states` for every step,

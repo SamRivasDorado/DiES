@@ -15,7 +15,7 @@ from Helper_functions import angle_between_lines
 # Error class shared with the core
 from DiES_core import InputError
 
-def evaluate_stress_state(p,s,cfi,T,output):
+def evaluate_stress_state(p,s,friction,T,output):
     """
     Evaluates a state of stress against the Griffith-Coulomb failure criterion.
     
@@ -23,7 +23,7 @@ def evaluate_stress_state(p,s,cfi,T,output):
     ----------
     p : int/float, the maximum compressive principal stress in Pa (p >= s)
     s : int/float, the minimum compressive principal stress in Pa
-    cfi : int/float, coefficient of internal friction (unitless)
+    friction : int/float, coefficient of internal friction (unitless)
     T : negative int/float, tensile strength in Pa. The Mohr diagram uses the
         compression-positive convention, so tension plots on the negative
         side of the normal-stress axis and T must always be < 0 (e.g. -1.5e6).
@@ -69,9 +69,9 @@ def evaluate_stress_state(p,s,cfi,T,output):
     strength), with NaN values, since no failure plane is defined.
     p < s, or a non-negative T, raise InputError.
 
-    Arrays (since Nov 2026, Phase 2): with output = 'values', p, s, cfi and T
+    Arrays (since Nov 2026, Phase 2): with output = 'values', p, s, friction and T
     may be arrays (or a mix of arrays and numbers, broadcast together, e.g. the
-    stresses of a grid and the cfi and T of each node). The result is then four
+    stresses of a grid and the friction and T of each node). The result is then four
     arrays of that shape: sn, ss and 2theta (float, NaN where there is no
     failure) and the mode (str). See evaluate_stress_states.
     """
@@ -80,8 +80,8 @@ def evaluate_stress_state(p,s,cfi,T,output):
         raise InputError("output must be 'values' or 'plot', got "+repr(output))
     
     # Arrays: every node of a grid in one call
-    if output=='values' and any(np.ndim(v)>0 for v in (p,s,cfi,T)):
-        return evaluate_stress_states(p,s,cfi,T)
+    if output=='values' and any(np.ndim(v)>0 for v in (p,s,friction,T)):
+        return evaluate_stress_states(p,s,friction,T)
     
     # The Mohr diagram is drawn by plotting.plot_mohr_circle, which takes the
     # values from this function (imported here to avoid a circular import)
@@ -97,10 +97,10 @@ def evaluate_stress_state(p,s,cfi,T,output):
         if p==s:
             raise InputError('p = s: the state of stress is isotropic and its Mohr circle is a point')
         import plotting
-        return plotting.plot_mohr_circle(p,s,cfi,T)
+        return plotting.plot_mohr_circle(p,s,friction,T)
     
     # Numbers: evaluated as one-node arrays, returned as plain numbers and a str
-    sn, ss, two_theta, mode = evaluate_stress_states(p,s,cfi,T)
+    sn, ss, two_theta, mode = evaluate_stress_states(p,s,friction,T)
     return float(sn), float(ss), float(two_theta), str(mode)
 
 
@@ -111,7 +111,7 @@ def evaluate_stress_state(p,s,cfi,T,output):
 FAILURE_TOLERANCE = 0.035
 
 
-def failure_contact(p,s,cfi,T):
+def failure_contact(p,s,friction,T):
     """
     Contact of the Mohr circle with the Griffith-Coulomb envelope, computed
     analytically (Phase 2, point 3B, Nov 2026; see docs/failure_criterion.md).
@@ -123,20 +123,20 @@ def failure_contact(p,s,cfi,T):
     
     With k = |T| (MPa, compression positive), the envelope is the Griffith
     parabola tau^2 = 4k(sigma_n + k) for -k <= sigma_n < 0 and the Coulomb line
-    tau = 2k + cfi*sigma_n for sigma_n >= 0. r_c is the smaller of the
+    tau = 2k + friction*sigma_n for sigma_n >= 0. r_c is the smaller of the
     distances from the centre to the two:
       - parabola: tangent where sigma_n = c - 2k, with r_c = sqrt(4kc), if that
         point is on it (k <= c <= 2k); if c < k, the closest point is the vertex
         (-k, 0): r_c = c + k ('Mode I'); if c > 2k, the end (0, 2k).
-      - line: r_c = (2k + cfi*c)/sqrt(1 + cfi^2), tangent where
-        sigma_n = c - r_c*cfi/sqrt(1 + cfi^2), if that is >= 0; otherwise the
+      - line: r_c = (2k + friction*c)/sqrt(1 + friction^2), tangent where
+        sigma_n = c - r_c*friction/sqrt(1 + friction^2), if that is >= 0; otherwise the
         end (0, 2k).
     
     Parameters
     ----------
     p, s : arrays or numbers, maximum and minimum compressive principal
            stresses in Pa (p >= s)
-    cfi : array or number, coefficient of internal friction
+    friction : array or number, coefficient of internal friction
     T : array or number, tensile strength in Pa (negative)
     All are broadcast together; no checks are made here (see evaluate_stress_states).
     
@@ -152,7 +152,7 @@ def failure_contact(p,s,cfi,T):
     """
     # Everything in MPa, compression positive; k = |T|
     p=np.asarray(p,dtype=float)/1e6 ; s=np.asarray(s,dtype=float)/1e6
-    k=-np.asarray(T,dtype=float)/1e6 ; mu=np.asarray(cfi,dtype=float)
+    k=-np.asarray(T,dtype=float)/1e6 ; mu=np.asarray(friction,dtype=float)
     p,s,k,mu=np.broadcast_arrays(p,s,k,mu)
     
     # Centre and radius of the Mohr circle
@@ -198,7 +198,7 @@ def failure_contact(p,s,cfi,T):
     return ratio, sn, ss, two_theta, mode
 
 
-def evaluate_stress_states(p,s,cfi,T):
+def evaluate_stress_states(p,s,friction,T):
     """
     evaluate_stress_state for arrays: evaluates the Griffith-Coulomb criterion
     at every node of a grid in one call (Phase 2: interface for arrays in
@@ -208,7 +208,7 @@ def evaluate_stress_states(p,s,cfi,T):
     ----------
     p, s : arrays (or numbers) of the maximum and minimum compressive principal
            stresses in Pa, p >= s at every node
-    cfi : array or number, coefficient of internal friction of each node
+    friction : array or number, coefficient of internal friction of each node
     T : array or number, tensile strength of each node in Pa (negative)
     All are broadcast together to a common shape.
 
@@ -222,9 +222,9 @@ def evaluate_stress_states(p,s,cfi,T):
 
     Raises InputError if any T >= 0 or if p < s at any node with finite stresses.
     """
-    # Common shape of the inputs (e.g. a grid with one cfi and T per node)
-    p,s,cfi,T=np.broadcast_arrays(np.asarray(p,dtype=float),np.asarray(s,dtype=float),
-                                  np.asarray(cfi,dtype=float),np.asarray(T,dtype=float))
+    # Common shape of the inputs (e.g. a grid with one friction and T per node)
+    p,s,friction,T=np.broadcast_arrays(np.asarray(p,dtype=float),np.asarray(s,dtype=float),
+                                  np.asarray(friction,dtype=float),np.asarray(T,dtype=float))
     
     # T must be negative: it is the tensile strength on the compression-positive
     # normal-stress axis of the Mohr diagram
@@ -242,7 +242,7 @@ def evaluate_stress_states(p,s,cfi,T):
         raise InputError('p must be the maximum compressive principal stress, but p = '
                          +str(p[tuple(i)])+' Pa < s = '+str(s[tuple(i)])+' Pa')
     
-    ratio, _, _, two_theta, contact_mode = failure_contact(p,s,cfi,T)
+    ratio, _, _, two_theta, contact_mode = failure_contact(p,s,friction,T)
     
     # Stresses on the failure plane: the point of the Mohr circle in the direction
     # 2theta of the contact. At r = r_c it is the contact point itself; within
@@ -280,7 +280,7 @@ def evaluate_stress_states(p,s,cfi,T):
     return sn, ss, two_theta, mode
 
 
-def evaluate_stress_state_sampling(p,s,cfi,T,output='values'):
+def evaluate_stress_state_sampling(p,s,friction,T,output='values'):
     """
     The failure criterion used until Nov 2026: it samples the Mohr circle and
     looks for points where the circle is tangent to the Griffith parabola or
@@ -297,7 +297,7 @@ def evaluate_stress_state_sampling(p,s,cfi,T,output='values'):
     ----------
     p : int/float, the maximum compressive principal stress in Pa (p > s)
     s : int/float, the minimum compressive principal stress in Pa
-    cfi : int/float, coefficient of internal friction (unitless)
+    friction : int/float, coefficient of internal friction (unitless)
     T : negative int/float, tensile strength in Pa. The Mohr diagram uses the
         compression-positive convention, so tension plots on the negative
         side of the normal-stress axis and T must always be < 0 (e.g. -1.5e6).
@@ -330,9 +330,9 @@ def evaluate_stress_state_sampling(p,s,cfi,T,output='values'):
     strength), with NaN values, since no failure plane is defined.
     p < s, or a non-negative T, raise InputError.
 
-    Arrays (since Nov 2026, Phase 2): with output = 'values', p, s, cfi and T
+    Arrays (since Nov 2026, Phase 2): with output = 'values', p, s, friction and T
     may be arrays (or a mix of arrays and numbers, broadcast together, e.g. the
-    stresses of a grid and the cfi and T of each node). The result is then four
+    stresses of a grid and the friction and T of each node). The result is then four
     arrays of that shape: sn, ss and 2theta (float, NaN where there is no
     failure) and the mode (str), node by node identical to the scalar call.
     See evaluate_stress_states.
@@ -390,7 +390,7 @@ def evaluate_stress_state_sampling(p,s,cfi,T,output='values'):
     circle_points = np.linspace(s,p,int(r)*50)
     
     # Calculating the slope and intercept of the Mohr-Coulomb failure line
-    slope_l = cfi ; intercept_l = -2*T
+    slope_l = friction ; intercept_l = -2*T
     
     temp_sn=[] ; temp_ss=[] ; temp_angle=[]
         
@@ -566,7 +566,7 @@ def evaluate_stress_state_sampling(p,s,cfi,T,output='values'):
             # failure line
             elif x>0:
                 y_circle = circle_eq_y(x_center, r, x)[0]            
-                y_line=-2*T+cfi*x
+                y_line=-2*T+friction*x
                 
                 if y_line==0:
                     y_line=0.001

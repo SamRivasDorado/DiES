@@ -32,9 +32,9 @@ if ROOT not in sys.path:
 
 from Modeling_functions import single_model
 
-# Material: E (Pa), v, density (kg m-3), cfi, T (Pa). Cohesion is implicit, C = 2|T|
+# Material: E (Pa), v, density (kg m-3), friction, T (Pa). Cohesion is implicit, C = 2|T|
 # Values of the example model in Rivas-Dorado et al. (2023, JSG 167, 104778). With v = 0.25
-# and cfi = 0.57 the lithostatic state alone does not reach failure (with cfi >= 0.6 it does),
+# and friction = 0.57 the lithostatic state alone does not reach failure (with friction >= 0.6 it does),
 # except near the bottom of the grid with Earth gravity: there it reaches the lower edge of the
 # failure band (r/r_c = 0.965) at ~6.0 km depth.
 # T is negative: tension is negative on the Mohr diagram.

@@ -65,7 +65,7 @@ def layered_inputs(model_inputs, layer_tops=None):
     
     Parameters
     ----------
-    model_inputs : 5 values, (E, v, density, cfi, T). Each one is a number (the same
+    model_inputs : 5 values, (E, v, density, friction, T). Each one is a number (the same
                    for every layer) or, with layer_tops, a list with one value per
                    layer, from the top down.
     layer_tops : None for a single-layer model, or the y of the top of each layer, in m,
@@ -76,12 +76,12 @@ def layered_inputs(model_inputs, layer_tops=None):
     
     Returns
     -------
-    y_position_layers, E, v, density, cfi, T : the inputs of model() (the boundaries and
+    y_position_layers, E, v, density, friction, T : the inputs of model() (the boundaries and
     the values of each layer, from the deepest up). For a single layer, the values are
     numbers and y_position_layers is 0 (any single value means one layer).
     """
     if len(model_inputs)!=5:
-        raise InputError('model_inputs must have 5 values (E, v, density, cfi, T), got '
+        raise InputError('model_inputs must have 5 values (E, v, density, friction, T), got '
                          +str(len(model_inputs))+'. The cohesion is no longer an input: it is implicit as C = 2|T|')
     
     # Single layer: every value must be a number, as until Nov 2026
@@ -98,7 +98,7 @@ def layered_inputs(model_inputs, layer_tops=None):
                          +str(list(tops)))
     
     # Each value: one number for every layer, or one value per layer (from the top down)
-    names=('E','v','density','cfi','T')
+    names=('E','v','density','friction','T')
     values=[]
     for name,value in zip(names,model_inputs):
         value=np.atleast_1d(np.asarray(value,dtype=float))
@@ -163,7 +163,7 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
-                    cfi, the coefficient of internal friction, as an float/int,
+                    friction, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa, negative
                     (tension is negative on the Mohr diagram), e.g. -1.5e6.
                     The cohesion is not an input: it is implicit in the
@@ -236,21 +236,21 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
     # Layers (one or several) and their properties, as model() takes them
-    layers, young, poisson, density, cfi, tension = layered_inputs(model_inputs, layer_tops)
+    layers, young, poisson, density, friction, tension = layered_inputs(model_inputs, layer_tops)
     
     # litho must be a real boolean, not a str
     litho=require_bool(litho,'litho')
     
     # Preparing the model: a coarser grid for the vectors and the trajectories
     if parameter=='ux' or parameter=='uy' or parameter=='uxy' or parameter=='st':
-        current_model=model(xlims,ylims,resolution[0]*2.5,resolution[1]*3,layers,young,poisson,density,cfi,tension,g)
+        current_model=model(xlims,ylims,resolution[0]*2.5,resolution[1]*3,layers,young,poisson,density,friction,tension,g)
     else:
-        current_model=model(xlims,ylims,resolution[0],resolution[1],layers,young,poisson,density,cfi,tension,g)
+        current_model=model(xlims,ylims,resolution[0],resolution[1],layers,young,poisson,density,friction,tension,g)
     
     # E and v that relate the aperture and the driving stress: those of the layer at
     # the centre of the crack (the only layer, in a single-layer model).
     # shear is the shear modulus, G. It must not be confused with the
-    # coefficient of internal friction, cfi
+    # coefficient of internal friction (friction; named cfi until Nov 2026)
     crack_E, poisson = crack_layer_properties(current_model, (upper_crack_tip_x,upper_crack_tip_y),
                                               (lower_crack_tip_x,lower_crack_tip_y))
     shear = G(crack_E, poisson)
@@ -345,18 +345,18 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
     # Layers (one or several) and their properties, as model() takes them
-    layers, young, poisson, density, cfi, tension = layered_inputs(model_inputs, layer_tops)
+    layers, young, poisson, density, friction, tension = layered_inputs(model_inputs, layer_tops)
     
     # litho must be a real boolean, not a str
     litho=require_bool(litho,'litho')
     
     # Creating the model
-    current_model=model(xlims,ylims,resolution[0],resolution[1],layers,young,poisson,density,cfi,tension,g)
+    current_model=model(xlims,ylims,resolution[0],resolution[1],layers,young,poisson,density,friction,tension,g)
     
     # E and v that relate the aperture (or slip) and the driving stress: those of the
     # layer at the centre of the crack (the only layer, in a single-layer model).
     # shear is the shear modulus, G. It must not be confused with the
-    # coefficient of internal friction, cfi
+    # coefficient of internal friction (friction; named cfi until Nov 2026)
     crack_E, poisson = crack_layer_properties(current_model, (upper_crack_tip_x,upper_crack_tip_y),
                                               (lower_crack_tip_x,lower_crack_tip_y))
     shear = G(crack_E, poisson)
@@ -398,8 +398,8 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     grid=current_model.grid()
     x, y, = grid[0], grid[1]
         
-    # The failure criterion takes the cfi and T of each node (they change with the layer)
-    node_cfi, node_T = grid[6], grid[8]
+    # The failure criterion takes the friction and T of each node (they change with the layer)
+    node_friction, node_T = grid[6], grid[8]
     
     # Results of the previous step, to keep the first failure of each node
     # (None before the first step)
@@ -410,7 +410,7 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     # crack, and is not taken as having jumped over the failure band at step 1
     unloaded=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),0,0,0)
     s1_0, s3_0, _, _ = current_model.principal_stresses(unloaded, rx, ry, litho)
-    previous_mode=evaluate_stress_states(s1_0, s3_0, node_cfi, node_T)[3]
+    previous_mode=evaluate_stress_states(s1_0, s3_0, node_friction, node_T)[3]
     del unloaded
     
     steps=[]
@@ -430,7 +430,7 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         # The stress state of every node of the grid is evaluated in one call
         # (Phase 2, point 3A, Nov 2026). Until then this was a double loop over
         # rows and nodes, with one call to evaluate_stress_state per node.
-        sn, ss, two_theta, mode = evaluate_stress_states(s1, s3, node_cfi, node_T)
+        sn, ss, two_theta, mode = evaluate_stress_states(s1, s3, node_friction, node_T)
         
         # Nodes that jumped over the failure band since the previous step (from
         # 'Below' to 'Above': the driving stress grew too much in one step).
@@ -440,7 +440,7 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         # then they stayed 'Above', without mode or plane)
         jumped=(mode=='Above') & (previous_mode=='Below')
         if np.any(jumped):
-            _, contact_sn, contact_ss, contact_two_theta, contact_mode = failure_contact(s1, s3, node_cfi, node_T)
+            _, contact_sn, contact_ss, contact_two_theta, contact_mode = failure_contact(s1, s3, node_friction, node_T)
             sn=np.where(jumped, contact_sn, sn) ; ss=np.where(jumped, contact_ss, ss)
             two_theta=np.where(jumped, contact_two_theta, two_theta)
             mode=np.where(jumped, contact_mode, mode)
@@ -530,7 +530,7 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
-                    cfi, the coefficient of internal friction, as an float/int,
+                    friction, the coefficient of internal friction, as an float/int,
                     tension, tensile strength as an float/int in Pa, negative
                     (tension is negative on the Mohr diagram), e.g. -1.5e6.
                     The cohesion is not an input: it is implicit in the

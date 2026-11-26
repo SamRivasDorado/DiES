@@ -27,7 +27,7 @@ circle in its six possible states.
 from DiES_core import model, crack
 import plotting
 
-current_model = model(xlims, ylims, dx, dy, 500, E, nu, density, cfi, T, g)
+current_model = model(xlims, ylims, dx, dy, 500, E, nu, density, friction, T, g)
 disc = crack(upper_tip, lower_tip, dpx, dpy, dpz)
 
 res = current_model.compute(disc, rxx, ryy, litho=True)    # computed once
@@ -70,7 +70,8 @@ instance for a displacement figure.
 
 **Fields** (the units and descriptions are in `results.FIELD_INFO`):
 
-- material at each node: `E`, `nu`, `density`, `cohesion` (2|T|), `cfi`, `coula`, `T`;
+- material at each node: `E`, `nu`, `density`, `cohesion` (2|T|), `friction` (the coefficient of internal
+  friction, μ′; named `cfi` until Nov 2026, and older files load with the new name), `coula`, `T`;
 - displacements, in m: `ux`, `uy`, `uz`;
 - stresses, in Pa, tension positive, including the remote stresses and, with `litho=True`, the
   lithostatic ones: `sxx`, `syy`, `sav`, `sxy`, `sxz`, `szz`, `tmax`;

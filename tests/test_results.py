@@ -22,11 +22,11 @@ from results import DiESResults
 
 warnings.filterwarnings('ignore')
 
-E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
+E, NU, RHO, FRICTION, T = 30e9, 0.25, 2900, 0.57, -1.5e6
 
 
 def small_case():
-    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, CFI, T, 9.81)
+    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, FRICTION, T, 9.81)
     up, lo = (0, -500), (0, -2000)
     disc = crack(up, lo, 2*G(E, NU)/(1500*(1 - NU)), 0, 0)
     return m, disc
@@ -132,6 +132,25 @@ def test_to_xarray_is_optional():
         raise AssertionError('to_xarray did not raise ImportError without xarray')
     ds = res.to_xarray()
     assert ds['a'].attrs['units'] == 'Pa' and np.array_equal(ds['a'].values, res.a)
+
+def test_files_saved_with_old_names_load_with_the_new_ones(tmp_path):
+    """Results saved before cfi was renamed friction (Nov 2026) open with the new names."""
+    import json
+    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, FRICTION, T, 9.81)
+    res = m.compute(crack((0, -500), (0, -2000), 5e6, 0, 0), 0, 0, True)
+    path = str(tmp_path / 'old.npz')
+    res.save(path)
+    with np.load(path) as data:
+        arrays = {key: data[key] for key in data.files}
+    # Rewrite the file as one saved with the old names
+    arrays['field_cfi'] = arrays.pop('field_friction')
+    units = json.loads(str(arrays['units_json'])) ; units['cfi'] = units.pop('friction')
+    meta = json.loads(str(arrays['metadata_json'])) ; meta['layers_cfi'] = meta.pop('layers_friction')
+    arrays['units_json'] = np.array(json.dumps(units)) ; arrays['metadata_json'] = np.array(json.dumps(meta))
+    np.savez(path, **arrays)
+    old = DiESResults.load(path)
+    assert 'friction' in old and 'cfi' not in old and 'layers_friction' in old.metadata
+    assert np.array_equal(old['friction'], res['friction'])
 
 
 if __name__ == '__main__':

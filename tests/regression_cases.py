@@ -38,7 +38,7 @@ import numpy as np
 # The cases are those of tests/visual_check.py (vertical dike, opening only;
 # 60-degree pure-shear fault with sigma_II = 15 MPa) plus a dilatant fault with
 # remote stresses and mode III, which exercises every term of the solution.
-MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, -1.5e6]   # E, nu, density, cfi, T
+MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, -1.5e6]   # E, nu, density, friction, T
 # Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
 G_EARTH = 9.81
 XLIMS = [-5000, 5000]
@@ -91,10 +91,10 @@ def investigation_range(case, core, helpers):
 
 def static_outputs(core, helpers, out):
     """model.compute() and the legacy methods, for every case, with and without lithostatic load."""
-    E, nu, density, cfi, T = MODEL_INPUTS
+    E, nu, density, friction, T = MODEL_INPUTS
     for case, (ci, dx, dy, dz, rx, ry) in CASES.items():
         disc = core.crack((ci[1], ci[2]), (ci[3], ci[4]), driving_stress_x(case, core, helpers), dy, dz)
-        m = core.model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, density, cfi, T, G_EARTH)
+        m = core.model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, density, friction, T, G_EARTH)
         for litho in (False, True):
             prefix = case + '__litho' + str(int(litho)) + '__'
             res = m.compute(disc, rx, ry, litho)
@@ -126,7 +126,7 @@ def dynamic_outputs(core, helpers, modeling, out):
 
 def mohr_outputs(failure, out):
     """evaluate_stress_state on a sweep of (p, s) states, from tension to compression."""
-    cfi, T = MODEL_INPUTS[3], MODEL_INPUTS[4]
+    friction, T = MODEL_INPUTS[3], MODEL_INPUTS[4]
     # A coarse sweep over the whole range, and a fine one (0.1 MPa) near the
     # Griffith parabola, where the narrow tension-shear modes ('Mode I',
     # 'Mixed-mode I-II') are found
@@ -139,7 +139,7 @@ def mohr_outputs(failure, out):
         if p < s:
             continue
         try:
-            result = failure.evaluate_stress_state(p, s, cfi, T, 'values')
+            result = failure.evaluate_stress_state(p, s, friction, T, 'values')
         except UnboundLocalError:
             # Bug of the sampling algorithm used until Phase 2, point 3B (found on
             # 25 Nov 2026): when a sample of the circle fell exactly on sigma_n = 0

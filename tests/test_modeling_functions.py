@@ -33,8 +33,8 @@ from Modeling_functions import single_model, dynamic_model
 
 warnings.filterwarnings('ignore')
 
-E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
-MODEL_INPUTS = [E, NU, RHO, CFI, T]
+E, NU, RHO, FRICTION, T = 30e9, 0.25, 2900, 0.57, -1.5e6
+MODEL_INPUTS = [E, NU, RHO, FRICTION, T]
 # Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
 G_EARTH = 9.81
 # Small grid to keep the tests fast
@@ -61,7 +61,7 @@ def test_bools_must_be_real_bools():
 
 def test_model_inputs_need_five_values():
     try:
-        single_model(DIKE, [E, NU, RHO, 3e6, CFI, T], 0, 0, 0, 0, 0, G_EARTH, True, 60, XLIMS, YLIMS, RES, 'sxy')
+        single_model(DIKE, [E, NU, RHO, 3e6, FRICTION, T], 0, 0, 0, 0, 0, G_EARTH, True, 60, XLIMS, YLIMS, RES, 'sxy')
     except InputError:
         return
     raise AssertionError('6 model_inputs accepted')
@@ -143,11 +143,11 @@ def test_tip_on_a_grid_node_is_singular():
 
 
 def test_evaluate_stress_state_edge_cases():
-    assert evaluate_stress_state(float('nan'), 1e6, CFI, T, 'values')[3] == 'Singular'
-    assert evaluate_stress_state(np.inf, 1e6, CFI, T, 'values')[3] == 'Singular'
-    assert evaluate_stress_state(5e6, 5e6, CFI, T, 'values')[3] == 'Below'          # isotropic compression
-    assert evaluate_stress_state(-2e6, -2e6, CFI, T, 'values')[3] == 'Above'        # isotropic tension > |T|
-    for args in ((1e6, 5e6, CFI, T), (5e6, 1e6, CFI, 1.5e6)):                      # p < s ; T > 0
+    assert evaluate_stress_state(float('nan'), 1e6, FRICTION, T, 'values')[3] == 'Singular'
+    assert evaluate_stress_state(np.inf, 1e6, FRICTION, T, 'values')[3] == 'Singular'
+    assert evaluate_stress_state(5e6, 5e6, FRICTION, T, 'values')[3] == 'Below'          # isotropic compression
+    assert evaluate_stress_state(-2e6, -2e6, FRICTION, T, 'values')[3] == 'Above'        # isotropic tension > |T|
+    for args in ((1e6, 5e6, FRICTION, T), (5e6, 1e6, FRICTION, 1.5e6)):                      # p < s ; T > 0
         try:
             evaluate_stress_state(*args, 'values')
         except InputError:

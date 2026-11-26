@@ -47,14 +47,14 @@ warnings.filterwarnings('ignore')
 
 def build(name):
     title, ci, dx, dy, dz = CASES[name]
-    E, nu, d, cfi, T = MODEL_INPUTS
+    E, nu, d, friction, T = MODEL_INPUTS
     a = ci[0] ; up = (ci[1], ci[2]) ; lo = (ci[3], ci[4])
     # Same as single_model: an opening crack gets dx from its aperture
     px = dx if a == 0 else a*G(E, nu)/(points_distance(up, lo)*(1 - nu))
     disc = crack(up, lo, px, dy, dz)
-    stress_model = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, d, cfi, T, G_EARTH)
+    stress_model = model(XLIMS, YLIMS, RESOLUTION[0], RESOLUTION[1], 500, E, nu, d, friction, T, G_EARTH)
     # single_model uses coarser grids for the vector plots and the trajectories
-    vector_model = model(XLIMS, YLIMS, RESOLUTION[0]*2.5, RESOLUTION[1]*3, 500, E, nu, d, cfi, T, G_EARTH)
+    vector_model = model(XLIMS, YLIMS, RESOLUTION[0]*2.5, RESOLUTION[1]*3, 500, E, nu, d, friction, T, G_EARTH)
     return title, disc, stress_model, vector_model
 
 
@@ -176,7 +176,7 @@ def main(argv=None):
             cover.text(0.5, 0.3, 'litho=' + str(litho) + ', rx=' + str(args.rx/1e6) + ' MPa, ry='
                        + str(args.ry/1e6) + ' MPa, g = ' + str(G_EARTH) + ' m/s², E = '
                        + str(MODEL_INPUTS[0]/1e9) + ' GPa, ν = ' + str(MODEL_INPUTS[1])
-                       + ', cfi = ' + str(MODEL_INPUTS[3]) + ', T = ' + str(MODEL_INPUTS[4]/1e6) + ' MPa',
+                       + ', friction = ' + str(MODEL_INPUTS[3]) + ', T = ' + str(MODEL_INPUTS[4]/1e6) + ' MPa',
                        ha='center', fontsize=11)
             pdf.savefig(cover) ; plt.close(cover)
 

@@ -25,11 +25,11 @@ from Helper_functions import G
 
 warnings.filterwarnings('ignore')
 
-E, NU, RHO, CFI, T = 30e9, 0.25, 2900, 0.57, -1.5e6
+E, NU, RHO, FRICTION, T = 30e9, 0.25, 2900, 0.57, -1.5e6
 
 
 def small_case():
-    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, CFI, T, 9.81)
+    m = model((-2000, 2000), (-3000, -10), 250, 250, 500, E, NU, RHO, FRICTION, T, 9.81)
     disc = crack((0, -500), (0, -2000), 2*G(E, NU)/(1500*(1 - NU)), 1e6, 0)
     return m, disc
 
@@ -131,17 +131,17 @@ def test_mohr_circle():
     T = -1.5e6
     # Below, Above, Mode I, Mixed-mode I-II, Mode II tension-compression, Mode II compression
     for p, s in ((5.4e6, 1.8e6), (5e6, -1.6e6), (4e6, -1.48e6), (5.71e6, -1.45e6), (9.68e6, -0.2e6), (13.5e6, 1.2e6)):
-        assert np.array_equal(pixels(evaluate_stress_state(p, s, CFI, T, 'plot')),
-                              pixels(plotting.plot_mohr_circle(p, s, CFI, T))), (p, s)
-    for call in (lambda: evaluate_stress_state(5e6, 1e6, CFI, T, 'figure'),
-                 lambda: evaluate_stress_state(5e6, 5e6, CFI, T, 'plot')):
+        assert np.array_equal(pixels(evaluate_stress_state(p, s, FRICTION, T, 'plot')),
+                              pixels(plotting.plot_mohr_circle(p, s, FRICTION, T))), (p, s)
+    for call in (lambda: evaluate_stress_state(5e6, 1e6, FRICTION, T, 'figure'),
+                 lambda: evaluate_stress_state(5e6, 5e6, FRICTION, T, 'plot')):
         try:
             call()
         except InputError:
             continue
         raise AssertionError('no InputError')
     try:
-        plotting.plot_mohr_circle(float('nan'), 1e6, CFI, T)
+        plotting.plot_mohr_circle(float('nan'), 1e6, FRICTION, T)
     except plotting.PlotError:
         pass
     else:

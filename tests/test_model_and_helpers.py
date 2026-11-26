@@ -26,12 +26,12 @@ warnings.filterwarnings('ignore')
 # Earth gravity for the tests since 25 Nov 2026 (Sam's convention); Mars (3.71) until then
 G_EARTH = 9.81
 LAYERS = dict(ypos=(-1100., -600., -300., 0.), E=[10e9, 20e9, 30e9], v=[0.25, 0.3, 0.35],
-              d=[2500, 2600, 2700], cfi=[0.6, 0.7, 0.8], T=[-1e6, -2e6, -3e6])
+              d=[2500, 2600, 2700], friction=[0.6, 0.7, 0.8], T=[-1e6, -2e6, -3e6])
 
 
 def three_layer_model():
     L = LAYERS
-    return model((0, 1000), (-1000, 0), 100, 100, L['ypos'], L['E'], L['v'], L['d'], L['cfi'], L['T'], G_EARTH)
+    return model((0, 1000), (-1000, 0), 100, 100, L['ypos'], L['E'], L['v'], L['d'], L['friction'], L['T'], G_EARTH)
 
 
 def expected_layer(y):
@@ -46,8 +46,8 @@ def test_multilayer_grid():
     y = grid[1][:, 0]
     layer = expected_layer(y)
     L = LAYERS
-    expected = {2: L['E'], 3: L['v'], 4: L['d'], 5: 2*np.abs(L['T']), 6: L['cfi'],
-                7: 0.5*np.arctan(1/np.array(L['cfi'])), 8: L['T']}
+    expected = {2: L['E'], 3: L['v'], 4: L['d'], 5: 2*np.abs(L['T']), 6: L['friction'],
+                7: 0.5*np.arctan(1/np.array(L['friction'])), 8: L['T']}
     for row, values in expected.items():
         assert np.allclose(grid[row][:, 0], np.asarray(values)[layer]), row
         assert np.all(grid[row] == grid[row][:, [0]]), row        # constant along each row
