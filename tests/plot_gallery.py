@@ -10,7 +10,7 @@ in order, in <out>/DiES_gallery.pdf:
     plot_principal_stresses  principal (s1), secondary (s3), angle
     plot_stress_trajectories without and with the optimal shear planes
     plot_plane_stresses      normal and shear stress on planes at --angle
-    crack.plot_mode_I_crack_displacements
+    crack.plot_crack_displacements
     dynamic_model            driving stress increased in steps of --step-mpa (0.25 MPa by
                              default), showing one figure every --show-every steps (4)
 
@@ -97,7 +97,9 @@ def figures(name, litho, rx, ry, angle):
     for stress in ('normal', 'shear'):
         yield 'plot_plane_stresses ' + stress + ', planes at ' + str(angle) + '°', \
               _draw(plotting.plot_plane_stresses, res, stress, angle, legacy_step=0.5)
-    yield 'crack.plot_mode_I_crack_displacements', plotting.plot_crack_opening(disc, MODEL_INPUTS[1], MODEL_INPUTS[0])
+    # plot_crack_displacements since Nov 2026 (plot_crack_opening in older commits)
+    crack_figure = getattr(plotting, 'plot_crack_displacements', None) or plotting.plot_crack_opening
+    yield 'crack.plot_crack_displacements', crack_figure(disc, MODEL_INPUTS[1], MODEL_INPUTS[0])
 
 
 def final_driving_stress(name):

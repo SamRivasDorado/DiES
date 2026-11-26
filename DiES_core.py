@@ -606,17 +606,23 @@ class crack(object):
                          'z':np.broadcast_to(uz,s.shape).astype(float)}
         return s, walls
     
-    def plot_mode_I_crack_displacements(self,v,E):
+    def plot_crack_displacements(self,v,E):
         """
-        Calculates and plots the displacements at the crack's 
-        discontinuity given the host rock mechanical properties.
-        Since Nov 2026 it draws the opening and the slip of any crack
-        (wall_displacements), not only the mode I opening.
+        Calculates and plots the displacements of the crack walls given the host
+        rock mechanical properties: the opening and the slip of both walls, and the
+        out-of-plane displacement (mode III) if any (wall_displacements).
         
         Returns the figure plotting said displacements.
+        
+        Named plot_mode_I_crack_displacements until Nov 2026, when it only drew the
+        mode I opening; that name is kept as an alias.
         """
-        # Since Nov 2026 the figure is drawn by plotting.plot_crack_opening
-        return plotting.plot_crack_opening(self,v,E)
+        # The figure is drawn by plotting.plot_crack_displacements
+        return plotting.plot_crack_displacements(self,v,E)
+    
+    def plot_mode_I_crack_displacements(self,v,E):
+        """Former name of plot_crack_displacements, kept for existing scripts."""
+        return self.plot_crack_displacements(v,E)
 
 
 class model(object):

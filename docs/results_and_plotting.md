@@ -19,7 +19,7 @@ circle in its six possible states.
 | `results.py` | `DiESResults` (one evaluation of a model) and `DynamicResults` (one `DiESResults` per step of the dynamic model). DiES's own classes on numpy arrays; no new dependency. |
 | `DiES_core.py` | `model.compute()`, which computes every field once, and the pure functions `principal_from_stresses()` and `optimal_plane_stresses()`. |
 | `Modeling_functions.py` | `compute_dynamic_model()`, the dynamic model without drawing. |
-| `plotting.py` | Every figure, drawn from results: `plot_displacement`, `plot_stresses`, `plot_principal_stresses`, `plot_stress_trajectories`, `plot_plane_stresses`, `plot_crack_opening`, `plot_dynamic_step`, `plot_mohr_circle`. |
+| `plotting.py` | Every figure, drawn from results: `plot_displacement`, `plot_stresses`, `plot_principal_stresses`, `plot_stress_trajectories`, `plot_plane_stresses`, `plot_crack_displacements`, `plot_dynamic_step`, `plot_mohr_circle`. |
 
 ## Static model
 
@@ -52,7 +52,7 @@ fig = plotting.plot_principal_stresses(res, 'angle')
 fig = plotting.plot_stress_trajectories(res, planes=True)
 fig = plotting.plot_plane_stresses(res, 'normal', 60)
 fig = plotting.plot_displacement(res, 'uxy', 'vectors')
-fig = plotting.plot_crack_opening(crack, nu, E)        # opening and slip of the crack walls
+fig = plotting.plot_crack_displacements(crack, nu, E)  # opening and slip of the crack walls
 s, walls = crack.wall_displacements(nu, E)             # the same profiles, as arrays
 ```
 
@@ -168,11 +168,16 @@ Each step also has every `DiESResults` method (`probe`, `profile`, `mask`, `to_c
   - the dynamic model draws every step with the σn colour range of the final step
     (`dynamic_model` and `dynamic_color_range`; `plot_dynamic_step` without it keeps the range of
     the step), with its text box inside the axes;
-  - `plot_crack_opening` (and `crack.plot_mode_I_crack_displacements`) draws the opening and the
+  - `plot_crack_displacements` (and `crack.plot_crack_displacements`; until then
+    `plot_crack_opening` and `crack.plot_mode_I_crack_displacements`, names kept as aliases)
+    draws the opening and the
     slip of both walls, and mode III if any, from the core solution (`crack.wall_displacements`);
     until then only the mode I opening, so a fault came out flat. Rounded values in its legend,
     and the half-length of the crack labelled as such (it was 'a', the symbol of the aperture);
-  - fields that are the same everywhere show a note.
+  - fields that are the same everywhere show a note;
+  - colour bars with automatic tick labels (decimals only when the range needs them; the dynamic
+    model had a fixed '%.2f');
+  - the text boxes with the driving stresses, anchored at their bottom inside the axes.
 
 ## Tests
 

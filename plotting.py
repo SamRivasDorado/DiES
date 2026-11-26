@@ -189,11 +189,12 @@ def plot_displacement(res, displacement, option, step=None):
     else:
         raise PlotError('Invalid option. Input "vectors" or "contours" instead.')
 
-    # Box with the driving stresses of the crack
-    ax.text(0.97, 0.10, r'$\sigma_I$ = ' + str(round(crack['dpx']/1E6, 2))
+    # Box with the driving stresses of the crack, anchored at its bottom inside the axes
+    # (Nov 2026; it was anchored at its top and ran over the x axis)
+    ax.text(0.97, 0.03, r'$\sigma_I$ = ' + str(round(crack['dpx']/1E6, 2))
             + ' MPa\n' + r'$\sigma_{II}$ = ' + str(round(crack['dpy']/1E6, 2)) + ' MPa',
             bbox=dict(fc='white', ec='black'),
-            horizontalalignment='right', verticalalignment='top',
+            horizontalalignment='right', verticalalignment='bottom',
             transform=ax.transAxes, fontsize=11, zorder=5)
     return figure
 
@@ -314,34 +315,36 @@ def plot_plane_stresses(res, stress, angle, step=None):
     figure, ax = _scalar_field(res, soi, label, step, locators=True)
 
     # Box with the driving stresses and the material: single values for one layer,
-    # the list of values of every layer otherwise
+    # the list of values of every layer otherwise. Anchored at its bottom inside the
+    # axes (Nov 2026; it was anchored at its top and ran over the x axis)
     dpx, dpy = crack['dpx'], crack['dpy']
     if meta['n_layers'] == 1:
-        ax.text(0.97, 0.14, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa ; ' + r'$\sigma_{II}$ = '
+        ax.text(0.97, 0.03, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa ; ' + r'$\sigma_{II}$ = '
                 + str(round(dpy/1E6, 2)) + ' MPa\n'
                 + r'$\alpha$ = ' + str(angle) + '° ; ' + r'$\rho$ = ' + str(np.float64(meta['layers_d'][0])) + ' kg m$^3$'
                 + '\nC = ' + str(np.float64(meta['layers_c'][0])/1e6) + ' MPa ; ' + r"$\mu'$ = "
                 + str(np.float64(meta['layers_cfi'][0])) + '; '
                 + r'$\theta_{opt}$ = ' + str(round(90 - np.degrees(np.float64(meta['layers_coula'][0])), 2)) + '°',
                 bbox=dict(fc='white', ec='black'),
-                horizontalalignment='right', verticalalignment='top',
+                horizontalalignment='right', verticalalignment='bottom',
                 transform=ax.transAxes, fontsize=11, zorder=5)
     else:
-        ax.text(0.98, 0.14, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa\n' + r'$\sigma_{II}$ = '
+        ax.text(0.98, 0.03, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa\n' + r'$\sigma_{II}$ = '
                 + str(round(dpy/1E6, 2)) + ' MPa\n'
                 + r'$\alpha$ = ' + str(angle) + '°'
                 + '\nC = ' + str(np.asarray(meta['layers_c'], dtype=float)/1e6) + ' MPa ; ' + r"$\mu'$ = "
                 + str(np.asarray(meta['layers_cfi'], dtype=float)) + '; '
                 + r'$\theta_{opt}$ = ' + str(np.round(90 - np.degrees(np.asarray(meta['layers_coula'])), 2)) + '°',
                 bbox=dict(fc='white', ec='black'),
-                horizontalalignment='right', verticalalignment='top',
+                horizontalalignment='right', verticalalignment='bottom',
                 transform=ax.transAxes, fontsize=11, zorder=5)
     return figure
 
 
-def plot_crack_opening(crack, v, E):
+def plot_crack_displacements(crack, v, E):
     """
-    Displacements of the crack walls (formerly crack.plot_mode_I_crack_displacements):
+    Displacements of the crack walls (named plot_crack_opening until Nov 2026, and drawn
+    by crack.plot_crack_displacements, formerly crack.plot_mode_I_crack_displacements):
     the component normal to the crack (opening, lines) and along it (slip, points)
     of each wall, and the out-of-plane one (mode III) if there is any.
     crack: a crack object, v: Poisson's ratio, E: Young's modulus in Pa.
@@ -377,6 +380,10 @@ def plot_crack_opening(crack, v, E):
     ax.text(0.01, 0.01, '+ side: normal n = (−t$_y$, t$_x$), t from the upper to the lower tip',
             transform=ax.transAxes, fontsize=7, color='0.4')
     return figure
+
+
+# Former name, kept so that existing scripts keep working (renamed in Nov 2026)
+plot_crack_opening = plot_crack_displacements
 
 
 def dynamic_color_range(dyn):
@@ -420,7 +427,8 @@ def plot_dynamic_step(step, downscaling, color_range=None):
     # Plotting stresses, with the colour range of the run (or of this step)
     vmin, vmax = color_range if color_range is not None else true_min_max(current_sn)
     plot = ax.pcolormesh(x, y, current_sn, cmap='viridis', vmin=vmin, vmax=vmax, shading='nearest')
-    cbar = figure.colorbar(plot, extend='both', format='%.2f')
+    # Automatic tick format: decimals only when the range needs them (Nov 2026; it was '%.2f')
+    cbar = figure.colorbar(plot, extend='both')
     cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
     cbar.ax.tick_params(labelsize=12)
     ax.contour(x, y, current_sn, levels=[0], colors='black', linewidths=0.75, linestyles='--')

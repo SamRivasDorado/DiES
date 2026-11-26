@@ -52,6 +52,8 @@ def test_wrappers_and_plotting_draw_the_same_figures():
         (m.plot_principal_stresses(disc, 'angle', 0, 0, True, 10), plotting.plot_principal_stresses(res, 'angle', 10)),
         (m.plot_stress_trajectories(disc, True, 0, 0, True), plotting.plot_stress_trajectories(res, True)),
         (m.plot_plane_stresses(disc, 'shear', 0, 0, 60, True, 0.5), plotting.plot_plane_stresses(res, 'shear', 60, 0.5)),
+        (disc.plot_crack_displacements(NU, E), plotting.plot_crack_displacements(disc, NU, E)),
+        # Former names, kept for existing scripts
         (disc.plot_mode_I_crack_displacements(NU, E), plotting.plot_crack_opening(disc, NU, E)),
     ]
     for k, (a, b) in enumerate(pairs):
@@ -169,7 +171,7 @@ def test_wall_displacements_match_the_analytical_profiles():
         assert np.all(walls['positive']['tangential'][1:-1]*walls['negative']['tangential'][1:-1] < 0)
         assert np.allclose(walls['positive']['normal'], walls['negative']['normal'], atol=1e-3*slip.max())
     # The figure of a fault is no longer flat
-    fig = plotting.plot_crack_opening(fault, nu, E)
+    fig = plotting.plot_crack_displacements(fault, nu, E)
     assert any(np.nanmax(np.abs(np.asarray(c.get_offsets())[:, 1])) > 0.5 for c in fig.axes[0].collections)
     plt.close(fig)
 
