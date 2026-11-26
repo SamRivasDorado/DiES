@@ -25,6 +25,7 @@ dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
+    "pyyaml",          # scenarios in YAML (dies/scenario.py)
 ]
 
 [project.optional-dependencies]

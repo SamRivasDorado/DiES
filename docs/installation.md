@@ -7,7 +7,7 @@ root of the repository are the only copy, and the package only adds a layer on t
 
 Open the repository folder in Spyder (or any IDE), so that it is the working directory, and run
 `Running_Models.py` or your own scripts. Nothing has to be installed beyond numpy, scipy and
-matplotlib. The modules import each other by name (`from Modeling_functions import single_model`),
+matplotlib (and PyYAML, only for the scenarios). The modules import each other by name (`from Modeling_functions import single_model`),
 and Python finds them because they are in the working folder.
 
 ## 2. As a package
@@ -35,8 +35,17 @@ fig = dies.plotting.plot_stresses(res, 'sxy')
 dyn = dies.compute_dynamic_model(...)
 ```
 
-`dies` contains no code of its own: `dies.model` is `DiES_core.model`, `dies.plotting` is
-`plotting`, and so on (`dies/__init__.py` lists what it exports). Optional extras:
+`dies` re-exports the core without copying it: `dies.model` is `DiES_core.model`,
+`dies.plotting` is `plotting`, and so on (`dies/__init__.py` lists what it exports). Its only
+module of its own is `dies/scenario.py`, which reads a complete model from a YAML or JSON file
+(see `docs/scenario.md`):
+
+```python
+scenario = dies.load_scenario('examples/dike_example.yaml')
+run = scenario.run()
+run.write('results/')
+```
+ Optional extras:
 `pip install -e .[test]` (pytest) and `pip install -e .[xarray]` (for `DiESResults.to_xarray()`).
 
 A normal installation (`pip install .`, without `-e`) copies the modules and works the same,

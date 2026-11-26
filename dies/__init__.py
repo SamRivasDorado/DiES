@@ -4,7 +4,11 @@ DiES (Discontinuities in Elastic Space) as a package (Phase 3, Nov 2026).
 This package is a facade: it re-exports the public API of the modules at the root of
 the repository (DiES_core.py, Modeling_functions.py, Failure_Determination.py,
 results.py, plotting.py), which stay as they are and can still be run as scripts.
-Nothing is copied: dies.model is DiES_core.model, and so on.
+Nothing is copied: dies.model is DiES_core.model, and so on. The only module of its own
+is dies/scenario.py, which reads a model described in a YAML or JSON file (Phase 3):
+
+    scenario = dies.load_scenario('examples/dike_example.yaml')
+    run = scenario.run() ; run.write('results/')
 
     import dies
     m = dies.model([-5000, 5000], [-6000, -10], 100, 100, 500, 30e9, 0.25, 2900, 0.57, -1.5e6, 9.81)
@@ -43,8 +47,12 @@ from results import DiESResults, DynamicResults
 # Figures, as a module: dies.plotting.plot_stresses(...), dies.plotting.plot_dynamic_step(...)
 import plotting
 
+# Scenarios: a complete model in one YAML/JSON file (Phase 3; the only code of the package itself)
+from dies.scenario import load_scenario, Scenario, ScenarioResults, ScenarioError, parse_quantity
+
 __all__ = ['crack', 'model', 'InputError', 'displacements', 'stresses',
            'single_model', 'dynamic_model', 'compute_dynamic_model',
            'evaluate_stress_state', 'evaluate_stress_states', 'failure_contact',
            'failure_plane_orientation', 'FAILURE_TOLERANCE',
-           'DiESResults', 'DynamicResults', 'plotting', '__version__']
+           'DiESResults', 'DynamicResults', 'plotting',
+           'load_scenario', 'Scenario', 'ScenarioResults', 'ScenarioError', 'parse_quantity', '__version__']

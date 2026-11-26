@@ -1,0 +1,42 @@
+# DiES scenario — fault dipping 60°, pure shear, static model (Phase 3)
+# The second reference case of the tests (tests/visual_check.py), as a scenario.
+# Format: docs/scenario.md.
+
+name: Fault dipping 60 deg, pure shear
+description: Second control case of the tests, sigma_II = 15 MPa, Earth gravity.
+
+grid:
+  x: [-5 km, 5 km]
+  y: [-6 km, -10 m]
+  cell: [100 m, 100 m]
+
+gravity: 9.81 m/s2
+
+layers:
+  - name: host rock
+    top: 0 m
+    E: 30 GPa
+    nu: 0.25
+    density: 2900 kg/m3
+    friction: 0.57
+    T: -1.5 MPa
+
+# A fault is given by its driving stresses (tractions): here only the slip, sigma_II
+# (> 0: normal sense, the hanging wall slides down-dip). The tips are 2 km apart.
+cracks:
+  - name: fault
+    upper_tip: [-500 m, -1000 m]
+    lower_tip: [500 m, -2732.0508 m]
+    sigma_II: 15 MPa
+
+lithostatic: true
+
+analysis:
+  type: static
+
+output:
+  results: [npz]
+  figures:
+    static: [uxy, sxy, s1, s3, angle, trajectories_planes, plane_normal, plane_shear, crack_displacements]
+  format: png
+  dpi: 200

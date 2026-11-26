@@ -1,0 +1,84 @@
+# DiES scenario — vertical dike, dynamic model (reference example, Phase 3)
+# Format agreed with Sam on 26 Nov 2026; described in docs/scenario.md.
+#
+# One file describes a complete model. DiES reads it, checks it and runs it:
+#     dies run examples/dike_example.yaml --out results/      (command line: next step)
+# or, from a script:
+#     scenario = dies.load_scenario('examples/dike_example.yaml') ; run = scenario.run()
+#     run.write('results/')
+#
+# Every quantity with dimensions carries its unit ("30 GPa", "-1.5 MPa", "5 km").
+# A number without a unit is rejected, so that a forgotten factor of 1e6 cannot pass.
+
+name: Vertical dike, opening only
+description: Control case of the tests (Rivas-Dorado et al., 2023, example model), Earth gravity.
+
+# ------------------------------------------------------------------ grid
+grid:
+  x: [-5 km, 5 km]          # model limits along x
+  y: [-6 km, -10 m]         # along y (negative downwards; the top must be below 0)
+  cell: [100 m, 100 m]      # cell size along x and y
+
+gravity: 9.81 m/s2          # 3.71 m/s2 for Mars
+
+# ------------------------------------------------------------------ layers
+# From the top down. Each layer starts at its `top` and ends at the top of the next one
+# (the last one goes down to the base of the model). One layer for a homogeneous model.
+# The first layer starts at the surface (top: 0 m).
+layers:
+  - name: host rock
+    top: 0 m
+    E: 30 GPa               # Young's modulus
+    nu: 0.25                # Poisson's ratio
+    density: 2900 kg/m3
+    friction: 0.57          # coefficient of internal friction (mu')
+    T: -1.5 MPa             # tensile strength, negative; the cohesion is implicit, C = 2|T|
+
+# A two-layer model would add, for example:
+#  - name: basement
+#    top: -3 km
+#    E: 50 GPa
+#    nu: 0.3
+#    density: 2700 kg/m3
+#    friction: 0.6
+#    T: -3 MPa
+
+# ------------------------------------------------------------------ cracks
+# One crack for now (superposing several is in the long-term roadmap).
+cracks:
+  - name: dike
+    upper_tip: [0 m, -1 km]
+    lower_tip: [0 m, -5 km]
+    # Either the total aperture (dikes: the opening driving stress is derived from it,
+    # eq. 2 of Rivas-Dorado et al., 2023) ...
+    aperture: 2 m
+    # ... or the driving stresses, for faults and other cracks:
+    # sigma_I: 0 MPa        # opening (> 0) or closing (< 0), normal to the crack
+    # sigma_II: 15 MPa      # slip along the crack, > 0 normal sense (hanging wall down-dip)
+    # sigma_III: 0 MPa      # out of the X-Y plane (mode III)
+
+# ------------------------------------------------------------------ loading
+remote_stresses:            # constant remote stresses, tension positive
+  xx: 0 MPa
+  yy: 0 MPa
+lithostatic: true           # add the lithostatic stresses of the layers
+
+# ------------------------------------------------------------------ analysis
+# static: one evaluation of the model (displacements, stresses, failure planes).
+# dynamic: the driving stresses grow step by step and the failure of each node is followed.
+# (A dynamic analysis also gives the static results of the crack at its final load.)
+analysis:
+  type: dynamic
+  step: 0.25 MPa            # driving stress added at each step (or: steps: 32)
+  plane_angle: 60 deg       # written in the label of plane_normal / plane_shear (optional)
+
+# ------------------------------------------------------------------ output
+output:
+  results: [npz, csv]       # DiESResults.save / to_csv (dynamic: DynamicResults.save)
+  figures:
+    static: [uxy, sxy, s1, angle, trajectories, plane_normal, crack_displacements]
+    dynamic:
+      show_every: 4         # one step in 4, and the last one
+      downscaling: 2        # one failure-plane trace every 2 nodes
+  format: png               # png, pdf or svg
+  dpi: 200
