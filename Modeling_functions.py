@@ -56,7 +56,90 @@ plt.rc('legend', fontsize=11)    # legend fontsize
 plt.rcParams.update({'figure.max_open_warning': 0})
 
 
-def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xlims,ylims,resolution,parameter):
+def layered_inputs(model_inputs, layer_tops=None):
+    """
+    Layers of single_model, dynamic_model and compute_dynamic_model (multilayer since
+    Nov 2026, Phase 2). Converts the user's description, from the top down, into the
+    inputs of model(), which takes the layer boundaries in ascending order and the
+    values from the deepest layer up.
+    
+    Parameters
+    ----------
+    model_inputs : 5 values, (E, v, density, cfi, T). Each one is a number (the same
+                   for every layer) or, with layer_tops, a list with one value per
+                   layer, from the top down.
+    layer_tops : None for a single-layer model, or the y of the top of each layer, in m,
+                 from the top down (strictly decreasing, e.g. [0, -3000]): each layer
+                 goes from its top down to the top of the next one, and the last one
+                 down to the base of the model and below. The uppermost layer is taken
+                 to reach the surface (y = 0) for the lithostatic load.
+    
+    Returns
+    -------
+    y_position_layers, E, v, density, cfi, T : the inputs of model() (the boundaries and
+    the values of each layer, from the deepest up). For a single layer, the values are
+    numbers and y_position_layers is 0 (any single value means one layer).
+    """
+    if len(model_inputs)!=5:
+        raise InputError('model_inputs must have 5 values (E, v, density, cfi, T), got '
+                         +str(len(model_inputs))+'. The cohesion is no longer an input: it is implicit as C = 2|T|')
+    
+    # Single layer: every value must be a number, as until Nov 2026
+    if layer_tops is None:
+        if any(np.ndim(value)>0 for value in model_inputs):
+            raise InputError('model_inputs has lists of values (one per layer), but layer_tops is not given: '
+                             'pass the top of each layer, from the top down')
+        return (0,)+tuple(model_inputs)
+    
+    tops=np.atleast_1d(np.asarray(layer_tops,dtype=float))
+    n=tops.size
+    if n>1 and np.any(np.diff(tops)>=0):
+        raise InputError('layer_tops must be strictly decreasing (the tops of the layers from the top down), got '
+                         +str(list(tops)))
+    
+    # Each value: one number for every layer, or one value per layer (from the top down)
+    names=('E','v','density','cfi','T')
+    values=[]
+    for name,value in zip(names,model_inputs):
+        value=np.atleast_1d(np.asarray(value,dtype=float))
+        if value.size==1:
+            value=np.repeat(value,n)
+        elif value.size!=n:
+            raise InputError(name+' has '+str(value.size)+' values, but layer_tops defines '+str(n)+' layer(s)')
+        # model() wants the deepest layer first
+        values.append(value[::-1])
+    
+    # A single top: one layer, with plain numbers
+    if n==1:
+        return (0,)+tuple(float(v[0]) for v in values)
+    
+    # Ascending boundaries for model(): layer i spans [bounds[i], bounds[i+1]). The first
+    # one only has to be below the top of the deepest layer (model() assigns everything
+    # below it to the deepest layer); the others are the tops, from the deepest layer up
+    bounds=np.concatenate(([tops[-1]-1.0],tops[::-1]))
+    return (bounds,)+tuple(values)
+
+
+def crack_layer_properties(current_model, upper_tip, lower_tip):
+    """
+    E and v that relate the aperture (or the slip) of a crack and its driving stress:
+    those of the layer that contains the centre of the crack (Sam's choice, Nov 2026).
+    If the tips are in different layers, a warning says that the relation is then
+    approximate (the analytical solution is that of a homogeneous medium).
+    """
+    import warnings
+    centre_y=(upper_tip[1]+lower_tip[1])/2
+    E=np.atleast_1d(np.asarray(current_model.layers_E,dtype=float))
+    v=np.atleast_1d(np.asarray(current_model.layers_v,dtype=float))
+    index=int(current_model.layer_index(centre_y))
+    if current_model.layer_index(upper_tip[1])!=current_model.layer_index(lower_tip[1]):
+        warnings.warn('The crack crosses a layer boundary: its aperture (or slip) and its driving stress are '
+                      'related with the E and v of the layer at its centre (y = '+str(centre_y)+' m)')
+    return float(E[index]), float(v[index])
+
+
+def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xlims,ylims,resolution,parameter,
+                 layer_tops=None):
     """
 
     Parameters
@@ -73,8 +156,10 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
                     the x and y values used in xlims and ylims.
                     The total height of the crack, b, is the distance
                     between its two tips and is calculated from them.
-    model_inputs :  list-like, contains the model parameters for a
-                    single-model layer.
+    model_inputs :  list-like, contains the model parameters (each one a number,
+                    for a single layer or the same in every layer, or, with
+                    layer_tops, a list with one value per layer from the top
+                    down; multilayer since Nov 2026):
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
@@ -109,6 +194,11 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     the discontinuities are plotted. The smaller the cellsize, the larger the 
     downscaling factor should be.
 
+    layer_tops : None (a single layer, as until Nov 2026), or the y of the top
+    of each layer in m, from the top down, e.g. [0, -3000] for two layers
+    (see layered_inputs). With several layers, the aperture of a dike is
+    converted into its driving stress with the E and v of the layer at the
+    centre of the crack (a warning says so if the crack crosses a boundary).
     parameter : a str, key for the parameter that one desires to plot. It can be;
                 'ux': displacements along the x axis
                 'uy': displacements along the y axis
@@ -145,20 +235,26 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     # b is the total height of the crack: the distance between its two tips
     b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
-    # Defining variables from model_inputs
-    if len(model_inputs)!=5:
-        raise InputError('model_inputs must have 5 values (E, v, density, cfi, T), got '
-                         +str(len(model_inputs))+'. The cohesion is no longer an input: it is implicit as C = 2|T|')
-    young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
-    cfi=model_inputs[3] ; tension=model_inputs[4]
+    # Layers (one or several) and their properties, as model() takes them
+    layers, young, poisson, density, cfi, tension = layered_inputs(model_inputs, layer_tops)
     
     # litho must be a real boolean, not a str
     litho=require_bool(litho,'litho')
-
+    
+    # Preparing the model: a coarser grid for the vectors and the trajectories
+    if parameter=='ux' or parameter=='uy' or parameter=='uxy' or parameter=='st':
+        current_model=model(xlims,ylims,resolution[0]*2.5,resolution[1]*3,layers,young,poisson,density,cfi,tension,g)
+    else:
+        current_model=model(xlims,ylims,resolution[0],resolution[1],layers,young,poisson,density,cfi,tension,g)
+    
+    # E and v that relate the aperture and the driving stress: those of the layer at
+    # the centre of the crack (the only layer, in a single-layer model).
     # shear is the shear modulus, G. It must not be confused with the
     # coefficient of internal friction, cfi
-    shear = G(model_inputs[0],model_inputs[1])
-        
+    crack_E, poisson = crack_layer_properties(current_model, (upper_crack_tip_x,upper_crack_tip_y),
+                                              (lower_crack_tip_x,lower_crack_tip_y))
+    shear = G(crack_E, poisson)
+    
     if a==0:
         # A fault: the driving stress orthogonal to the crack is an input
         px=dx
@@ -172,12 +268,6 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
         # Creating the crack object
         disc=crack((upper_crack_tip_x,upper_crack_tip_y),(lower_crack_tip_x,lower_crack_tip_y),px,dy,dz)
        
-     # Preparing the model
-    if parameter=='ux' or parameter=='uy' or parameter=='uxy' or parameter=='st':
-         current_model=model(xlims,ylims,resolution[0]*2.5,resolution[1]*3,(200),(young),(poisson),(density),(cfi),(tension),g)
-    
-    else:
-        current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cfi),(tension),g)
     
     grid=current_model.grid()
 
@@ -218,11 +308,14 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     
 ################ A function to run a dynamic model of the opening or slip of a crack ################
 
-def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution):
+def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,
+                          layer_tops=None):
     """
     Computes the dynamic model step by step, without drawing (Phase 1, Nov 2026).
     
     Same inputs as dynamic_model, without downscaling, plotting and folder.
+    model_inputs and layer_tops as in single_model: one layer, or several
+    (since Nov 2026).
     The driving stresses grow with investigation_range; at each step the stress
     state of every node is evaluated with evaluate_stress_state, and the first
     failure found at a node is kept in all the following steps. Since Nov 2026
@@ -251,20 +344,23 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
     # b is the total height of the crack: the distance between its two tips
     b = points_distance((upper_crack_tip_x,upper_crack_tip_y), (lower_crack_tip_x,lower_crack_tip_y))
     
-    # Defining variables from model_inputs
-    if len(model_inputs)!=5:
-        raise InputError('model_inputs must have 5 values (E, v, density, cfi, T), got '
-                         +str(len(model_inputs))+'. The cohesion is no longer an input: it is implicit as C = 2|T|')
-    young=model_inputs[0] ; poisson=model_inputs[1] ; density=model_inputs[2]
-    cfi=model_inputs[3] ; tension=model_inputs[4]
+    # Layers (one or several) and their properties, as model() takes them
+    layers, young, poisson, density, cfi, tension = layered_inputs(model_inputs, layer_tops)
     
     # litho must be a real boolean, not a str
     litho=require_bool(litho,'litho')
-
+    
+    # Creating the model
+    current_model=model(xlims,ylims,resolution[0],resolution[1],layers,young,poisson,density,cfi,tension,g)
+    
+    # E and v that relate the aperture (or slip) and the driving stress: those of the
+    # layer at the centre of the crack (the only layer, in a single-layer model).
     # shear is the shear modulus, G. It must not be confused with the
     # coefficient of internal friction, cfi
-    shear = G(model_inputs[0],model_inputs[1])
-
+    crack_E, poisson = crack_layer_properties(current_model, (upper_crack_tip_x,upper_crack_tip_y),
+                                              (lower_crack_tip_x,lower_crack_tip_y))
+    shear = G(crack_E, poisson)
+    
     # Final driving stress orthogonal to the crack, and final displacement
     # of the crack walls, i.e., the values reached at 100% of the model
     if a==0:
@@ -299,8 +395,6 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         dzs_to_use.append(dz*percentage)
         lengths_to_use.append(length_final*percentage)
      
-    # Creating the model
-    current_model=model(xlims,ylims,resolution[0],resolution[1],(500),(young),(poisson),(density),(cfi),(tension),g)
     grid=current_model.grid()
     x, y, = grid[0], grid[1]
         
@@ -400,13 +494,18 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
         del disc
         gc.collect()
     
-    return DynamicResults(steps, {'model_inputs':[float(v) for v in model_inputs], 'crack_inputs':[float(v) for v in crack_inputs],
+    # Run metadata: model_inputs keeps a number per property (one layer) or a list per
+    # layer (from the top down), and layer_tops is None for a single layer
+    return DynamicResults(steps, {'model_inputs':[np.asarray(v,dtype=float).tolist() for v in model_inputs],
+                                  'layer_tops':None if layer_tops is None else np.asarray(layer_tops,dtype=float).tolist(),
+                                  'crack_inputs':[float(v) for v in crack_inputs],
                                   'investigation_range':[float(v) for v in investigation_range],
                                   'rx':float(np.mean(rx)), 'ry':float(np.mean(ry)), 'litho':litho, 'g':float(g),
                                   'failure_criterion':'analytical', 'failure_tolerance':FAILURE_TOLERANCE})
 
 
-def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder):
+def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder,
+                  layer_tops=None):
     """
 
     Parameters
@@ -424,8 +523,10 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
                     Values should be negative so the crack is placed in the subsurface.
                     The total height of the crack, b, is the distance
                     between its two tips and is calculated from them.
-    model_inputs :  list-like, contains the model parameters for a
-                    single-model layer.
+    model_inputs :  list-like, contains the model parameters (each one a number,
+                    for a single layer or the same in every layer, or, with
+                    layer_tops, a list with one value per layer from the top
+                    down; multilayer since Nov 2026):
                     Young's modulus as a float/int in Pa,
                     Poissons ratio as an float/int between 0-0.5,
                     density as an float/int in kgm^3,
@@ -467,6 +568,8 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     downscaling factor should be. Typical values should be between 1 and 5.
 
     folder : path in which to save the figures, as a str
+    layer_tops : None (a single layer, as until Nov 2026), or the y of the top
+    of each layer in m, from the top down (see single_model and layered_inputs).
 
     Returns
     -------
@@ -488,11 +591,15 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     # plotting.plot_dynamic_step draws them. The figures and the returned
     # array are the same as before.
     results=compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,
-                                  investigation_range,xlims,ylims,resolution)
+                                  investigation_range,xlims,ylims,resolution,layer_tops)
     
     if plotting:
-        young=model_inputs[0] ; tension=model_inputs[4]
-        shear=G(model_inputs[0],model_inputs[1])
+        # E, G and T in the file names: those of the layer at the centre of the crack
+        # (the only layer, in a single-layer model)
+        centre_layer=model(xlims,ylims,resolution[0],resolution[1],*layered_inputs(model_inputs,layer_tops),g)
+        index=int(centre_layer.layer_index((crack_inputs[2]+crack_inputs[4])/2))
+        young=float(np.atleast_1d(centre_layer.layers_E)[index]) ; tension=float(np.atleast_1d(centre_layer.layers_T)[index])
+        shear=G(young,float(np.atleast_1d(centre_layer.layers_v)[index]))
         color_range=dies_plotting.dynamic_color_range(results)
         for step_results in results:
             meta=step_results.metadata

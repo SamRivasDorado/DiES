@@ -24,6 +24,12 @@ crack_inputs=['crack total aperture','x coordinate of the upper crack tip','y co
 model_inputs=['Youngs modulus','poissons ratio','density','coefficient of internal friction','tensile strength (negative, e.g. -1.5e6)']
 # The cohesion is not an input: it is implicit in the modified Griffith criterion as C = 2|T|
 
+# Several layers (optional, since Nov 2026): give each value of model_inputs as a list,
+# one value per layer from the top down (or a single number if it is the same in all),
+# and add layer_tops=[top of layer 1, top of layer 2, ...] in m, from the top down, at the
+# end of the call, e.g. layer_tops=[0, -3000] for two layers. The aperture of a dike is
+# converted into its driving stress with the E and v of the layer at the crack centre.
+
 dx='driving stress orthogonal to the crack, only needed if crack aperture is 0'
 
 dy='driving stress parallel to the crack, >0 normal sense (hanging wall down-dip), <0 reverse' ; dz='driving stress into the X-Y plane'
@@ -70,6 +76,12 @@ crack_inputs=['crack total aperture','x coordinate of the upper crack tip','y co
 
 model_inputs=['Youngs modulus','poissons ratio','density','coefficient of internal friction','tensile strength (negative, e.g. -1.5e6)']
 # The cohesion is not an input: it is implicit in the modified Griffith criterion as C = 2|T|
+
+# Several layers (optional, since Nov 2026): give each value of model_inputs as a list,
+# one value per layer from the top down (or a single number if it is the same in all),
+# and add layer_tops=[top of layer 1, top of layer 2, ...] in m, from the top down, at the
+# end of the call, e.g. layer_tops=[0, -3000] for two layers. The aperture of a dike is
+# converted into its driving stress with the E and v of the layer at the crack centre.
 
 dx='final driving stress orthogonal to the crack, only needed if crack aperture is 0. >0 for a dilatant fault, <0 for a compaction band, 0 for pure shearing'
 
