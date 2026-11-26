@@ -193,7 +193,8 @@ Circles of centre c and radius q·r_c, q from 0.90 to 1.10 in steps of 0.002, T 
   0.76 MPa and 13° in 2θ, the averaging error of Section 6.3. The rest are the changes above:
   Mode I → mixed mode, band edges, the 77 crashes (now classified) and the small circles.
 - **Dynamic models** (dike with opening only and 60° fault with σII = 15 MPa, 0.25 MPa per step,
-  250 m grid, litho on): 10 of 960 nodes change in each, all near the surface. Most are nodes that
+  250 m grid, litho on, Mars gravity g = 3.71 m/s²: the comparison was made before the tests
+  moved to Earth gravity): 10 of 960 nodes change in each, all near the surface. Most are nodes that
   the sampling algorithm left `'Above'` because they jumped the band and that now record Mode I or
   mixed mode; 2 per model change from Mode I to mixed mode. Of the nodes that fail with both, the
   first-failure step is the same or one step (0.25 MPa) apart, except one node of the fault.
@@ -202,7 +203,11 @@ Circles of centre c and radius q·r_c, q from 0.90 to 1.10 in steps of 0.002, T 
 ![Comparison](figures/failure_criterion_comparison.png)
 
 _Script: `docs/figures/failure_criterion_comparison.py` (runs commit `4adce9e` in a temporary
-git worktree and the current code)._
+git worktree and the current code; g = 3.71, as in the tests until 25 Nov 2026)._
+
+The check of the analytical criterion with Earth gravity (g = 9.81), node by node, is
+`tests/failure_check.py` (25 Nov 2026: 904 failed nodes in the dike and 956 in the fault, all
+consistent with the band, the contact mode and the stresses resolved on their planes).
 
 ## 7. Where it is in the code
 

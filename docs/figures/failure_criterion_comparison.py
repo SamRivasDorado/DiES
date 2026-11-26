@@ -24,6 +24,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 OLD_COMMIT = '4adce9e'
 
 MODEL_INPUTS = [30e9, 0.25, 2900, 0.57, -1.5e6]
+# Mars gravity: the comparison of 25 Nov 2026 was made before the tests moved to Earth gravity
+G = 3.71
 FAULT_LOWER_Y = -1000 - 1000*np.tan(np.radians(60))
 # name: (crack_inputs, dx, dy, dz, number of steps of 0.25 MPa)
 CASES = {'dike': ([2, 0, -1000, 0, -5000], 0, 0, 0, 32),
@@ -41,7 +43,7 @@ def compute(code_root, out):
     data = {}
     for case, (ci, dx, dy, dz, n) in CASES.items():
         t = time.perf_counter()
-        dyn = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, 3.71, True, [i/n for i in range(1, n + 1)],
+        dyn = compute_dynamic_model(ci, MODEL_INPUTS, dx, dy, dz, 0, 0, G, True, [i/n for i in range(1, n + 1)],
                                     [-5000, 5000], [-6000, -10], [250, 250])
         data[case + '__seconds'] = np.asarray(time.perf_counter() - t)
         data[case + '__final_mode'] = np.asarray(dyn.final_mode()).astype(str)
