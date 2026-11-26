@@ -1,0 +1,47 @@
+# Packaging of DiES (Phase 3, Nov 2026).
+#
+# The modules at the root of the repository stay as they are and keep running as
+# scripts from Spyder or any IDE (open the repository folder). This file only adds a
+# layer on top: `pip install -e .` makes them importable from any folder, together
+# with the `dies` package (dies/), which re-exports their public API:
+#
+#     from dies import model, crack, compute_dynamic_model, plotting
+#
+# Installed in editable mode (-e), changes to the files take effect immediately.
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dies"
+version = "0.3.0.dev0"
+description = "DiES (Discontinuities in Elastic Space): displacements, stresses and failure around cracks, dikes and faults in an elastic medium"
+readme = "ReadMe.txt"
+license = {file = "LICENSE"}
+authors = [{name = "Samuel Rivas Dorado"}]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+# pytest for the tests; xarray only for DiESResults.to_xarray()
+test = ["pytest"]
+xarray = ["xarray"]
+
+[tool.setuptools]
+# The modules at the root, installed with their current names, so that they keep
+# importing each other as they do when run as scripts (e.g. `from results import ...`).
+# Running_Models.py is the user's template script and is not installed.
+py-modules = [
+    "DiES_core",
+    "Modeling_functions",
+    "Failure_Determination",
+    "Helper_functions",
+    "results",
+    "plotting",
+]
+packages = ["dies"]
