@@ -24,6 +24,8 @@ from matplotlib.ticker import MultipleLocator
 
 from Helper_functions import G
 from Helper_functions import boundaries_contours
+from Helper_functions import auto_contour_step
+from Helper_functions import model_locators
 from Helper_functions import create_figure
 from Helper_functions import true_min_max
 from Helper_functions import downsample_2darray
@@ -73,60 +75,80 @@ def _axes(res, figsize, locators):
     return figure, ax
 
 
-def _set_locators(ax):
-    # Ticks every 1000 m (x) and 500 m (y), minor ticks every 100 m, as in the original figures
-    ax.xaxis.set_major_locator(MultipleLocator(1000))
-    ax.xaxis.set_minor_locator(MultipleLocator(100))
-    ax.yaxis.set_major_locator(MultipleLocator(500))
-    ax.yaxis.set_minor_locator(MultipleLocator(100))
+def _set_locators(ax, res):
+    # Major ticks at round intervals that do not overlap (at most 6 labels in x,
+    # 13 in y) and automatic minor ticks. Until Nov 2026 the major ticks were every
+    # 1000 m (x) and 500 m (y), and the x labels of a 10 km model overlapped.
+    model_locators(ax, res.metadata['x_limits'], res.metadata['y_limits'])
 
 
-def _label_contours(ax, contours, step):
-    """Contour label format of plot_stresses, plot_principal_stresses and plot_plane_stresses."""
-    if step <= 0.001:
-        ax.clabel(contours, fmt='%1.4f')
-    elif step < 0.01:
-        ax.clabel(contours, fmt='%1.3f')
-    elif 0.01 <= step <= 1:
-        ax.clabel(contours, fmt='%1.2f')
-    elif step >= 1:
-        ax.clabel(contours, fmt='%1.1f')
+def _cell_size(res):
+    """Smallest spacing between nodes of the grid, in m (to scale segments and arrows)."""
+    spacing = [np.min(np.abs(np.diff(v))) for v in (res.x_nodes(), res.y_nodes()) if len(v) > 1]
+    return float(min(spacing)) if spacing else 100.0
 
 
-def _scalar_field(res, soi, label, step, figsize=(6, 6), locators=False, grid_lines=False):
-    """pcolormesh + contours of a field already in plotting units."""
+def _label_contours(ax, contours):
+    """
+    Labels of the contours, with the digits the levels need (e.g. 20, 2.5, 0.05).
+    Until Nov 2026 the number of decimals depended on the step given.
+    """
+    if len(contours.levels):
+        ax.clabel(contours, fmt='%g')
+
+
+def _scalar_field(res, soi, label, step=None, figsize=(6, 6), locators=False, grid_lines=False,
+                  cmap='viridis', limits=None, contours=True):
+    """
+    pcolormesh + contours of a field already in plotting units.
+
+    step: contour interval; None chooses a round one automatically
+    (Helper_functions.auto_contour_step). limits: (vmin, vmax) of the colours,
+    instead of the 1st and 99th percentiles. contours: False for no contours.
+    """
     upper_tip, lower_tip = _crack_tips(res)
     x, y = res.x, res.y
     figure, ax = _axes(res, figsize, locators)
     # The crack, in red
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3)
     if locators:
-        _set_locators(ax)
-    # Colour limits and contour levels, rounded to multiples of step
+        _set_locators(ax, res)
+    # A field that is the same everywhere (e.g. sigma_xz without mode III loading)
+    # has nothing to map: a note says so, instead of an empty colour scale
+    finite = np.asarray(soi, dtype=float)[np.isfinite(soi)]
+    if finite.size == 0 or np.ptp(finite) == 0:
+        value = finite[0] if finite.size else float('nan')
+        ax.text(0.5, 0.5, label.split(' (')[0] + ' = ' + ('%g' % value) + ' everywhere', ha='center', va='center',
+                transform=ax.transAxes, fontsize=14, bbox=dict(fc='white', ec='0.5'))
+        return figure, ax
+    # Colour limits (1st and 99th percentiles) and contour levels, at multiples of step
     plot_params = boundaries_contours(soi, step)
+    vmin, vmax = limits if limits is not None else plot_params[:2]
     # Colour map of the field, with a colour bar
-    plot = ax.pcolormesh(x, y, soi, cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
+    plot = ax.pcolormesh(x, y, soi, cmap=cmap, vmin=vmin, vmax=vmax, shading='nearest')
     if grid_lines:
         ax.grid(which='both', alpha=0.5)
-    cbar = figure.colorbar(plot, extend='both')
+    cbar = figure.colorbar(plot, extend='neither' if limits is not None else 'both')
     cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
     cbar.ax.tick_params(labelsize=12)
-    # Dashed, labelled contours every step
-    contours = ax.contour(x, y, soi, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
-    _label_contours(ax, contours, step)
+    # Dashed, labelled contours at the levels
+    if contours:
+        lines = ax.contour(x, y, soi, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
+        _label_contours(ax, lines)
     return figure, ax
 
 
 # --------------------------------------------------------------------- figures
 
-def plot_displacement(res, displacement, option, step):
+def plot_displacement(res, displacement, option, step=None):
     """
     Displacement figure (formerly model.plot_displacement).
 
     res: DiESResults with ux and uy,
     displacement: 'ux', 'uy' or 'uxy' (in-plane vector; colour = its magnitude),
     option: 'vectors' or 'contours',
-    step: contour step, in m (also used when option is 'vectors').
+    step: contour step, in m (also used when option is 'vectors'); None (the
+    default since Nov 2026) chooses a round one from the values.
     """
     _require(res, 'ux', 'uy')
     upper_tip, lower_tip = _crack_tips(res)
@@ -157,20 +179,13 @@ def plot_displacement(res, displacement, option, step):
         cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
         cbar.ax.tick_params(labelsize=12)
     elif option == 'contours':
-        # Colour map and labelled contours of dt (the label format depends on the step)
+        # Colour map and labelled contours of dt
         plot = ax.pcolormesh(x, y, dt, cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
         cbar = figure.colorbar(plot, extend='both')
         cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
         cbar.ax.tick_params(labelsize=12)
         contours = ax.contour(x, y, dt, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
-        if step <= 0.001:
-            ax.clabel(contours, fmt='%1.4f')
-        elif step < 0.01:
-            ax.clabel(contours, fmt='%1.3f')
-        elif 0.01 <= step < 0.1:
-            ax.clabel(contours, fmt='%1.2f')
-        elif step >= 0.1:
-            ax.clabel(contours, fmt='%1.1f')
+        _label_contours(ax, contours)
     else:
         raise PlotError('Invalid option. Input "vectors" or "contours" instead.')
 
@@ -183,13 +198,14 @@ def plot_displacement(res, displacement, option, step):
     return figure
 
 
-def plot_stresses(res, stress, step):
+def plot_stresses(res, stress, step=None):
     """
     Stress component figure, in MPa (formerly model.plot_stresses).
 
     stress: 'sxa', 'sya', 'sav', 'sxya', 'sxza', 'sza', 'ta' (the former keys)
     or the field names 'sxx', 'syy', 'sav', 'sxy', 'sxz', 'szz', 'tmax',
-    step: contour step, in MPa.
+    step: contour step, in MPa; None (the default since Nov 2026) chooses a
+    round one from the values.
     """
     if stress not in STRESS_KEYS:
         raise PlotError('Invalid stress "' + str(stress) + '". Input one of ' + ', '.join(sorted(STRESS_KEYS)))
@@ -200,13 +216,19 @@ def plot_stresses(res, stress, step):
     return figure
 
 
-def plot_principal_stresses(res, stress, step):
+def plot_principal_stresses(res, stress, step=None):
     """
     Principal stress figure (formerly model.plot_principal_stresses).
 
     stress: 'principal' (sigma1, MPa), 'secondary' (sigma3, MPa) or 'angle'
     (orientation of sigma1, degrees counterclockwise from +x),
-    step: contour step, in MPa or degrees.
+    step: contour step, in MPa; None (the default since Nov 2026) chooses a
+    round one from the values. Not used for 'angle'.
+
+    The angle is drawn with a cyclic colour scale ('twilight', -90 to 90
+    degrees) and without contours, since -90 and +90 degrees are the same
+    orientation (Nov 2026; until then a linear scale made vertical sigma1
+    look both dark and bright, with a false jump between them).
     """
     _require(res, 's1', 's3', 's1a')
     # The field to draw (soi, 'stress of interest') and its colour-bar label
@@ -216,6 +238,9 @@ def plot_principal_stresses(res, stress, step):
         soi = res.s3/1e6 ; label = r'$\sigma_3$ (MPa)'
     elif stress == 'angle':
         soi = res.s1a ; label = r'$\sigma_1$ angle from +x (°)'
+        figure, ax = _scalar_field(res, soi, label, locators=True, cmap='twilight', limits=(-90, 90),
+                                   contours=False)
+        return figure
     else:
         raise PlotError('Invalid stress. Input "principal", "secondary" or "angle" instead.')
     figure, ax = _scalar_field(res, soi, label, step, locators=True)
@@ -238,41 +263,44 @@ def plot_stress_trajectories(res, planes):
     p_angles = np.deg2rad(res.s1a) ; s_angles = np.deg2rad(res.s3a)
     coula = res.coula
 
-    figure, ax = _axes(res, (7, 6), True)
+    figure, ax = _axes(res, (6, 6), True)
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3)
-    _set_locators(ax)
+    _set_locators(ax, res)
 
     # Headless segments centred on each node (trajectories), coloured by the magnitude:
-    # sigma1 in copper, sigma3 in cool colours
-    plot1 = ax.quiver(x, y, np.cos(p_angles), np.sin(p_angles), p, headlength=0, pivot='middle', scale=0.0090,
-                      units='xy', width=10, headwidth=1, cmap='copper_r')
-    plot2 = ax.quiver(x, y, np.cos(s_angles), np.sin(s_angles), s, headlength=0, pivot='middle', scale=0.0090,
-                      units='xy', width=10, headwidth=1, cmap='cool')
+    # sigma1 in copper, sigma3 in cool colours. Their length is 0.9 times the spacing
+    # of the grid and their width 0.08 times (Nov 2026; until then a fixed 111 m and
+    # 10 m, too short on coarse grids and overlapping on fine ones)
+    cell = _cell_size(res)
+    seg = dict(headlength=0, headaxislength=0, pivot='middle', scale=1/(0.9*cell), units='xy',
+               width=0.08*cell, headwidth=1)
+    plot1 = ax.quiver(x, y, np.cos(p_angles), np.sin(p_angles), p, cmap='copper_r', **seg)
+    plot2 = ax.quiver(x, y, np.cos(s_angles), np.sin(s_angles), s, cmap='cool', **seg)
 
-    cbar = figure.colorbar(plot1, extend='both', shrink=0.60, aspect=30, pad=0.05)
-    cbar.set_label(r'$\sigma_1$ (MPa)', rotation=270, labelpad=12, fontsize=14)
-    cbar.ax.tick_params(labelsize=12)
-    cbar = figure.colorbar(plot2, extend='both', shrink=0.60, aspect=30)
-    cbar.set_label(r'$\sigma_3$ (MPa)', rotation=270, labelpad=16, fontsize=14)
-    cbar.ax.tick_params(labelsize=12)
+    # Two horizontal colour bars under the map, at fixed places below the x label
+    # (Nov 2026; side by side, their labels overlapped)
+    for plot, label, bottom in ((plot1, r'$\sigma_1$ (MPa)', -0.23), (plot2, r'$\sigma_3$ (MPa)', -0.43)):
+        cbar = figure.colorbar(plot, cax=ax.inset_axes([0.05, bottom, 0.9, 0.025]), extend='both',
+                               orientation='horizontal')
+        cbar.set_label(label, fontsize=13)
+        cbar.ax.tick_params(labelsize=11)
 
     if planes:
         # The two conjugate optimal shear planes lie at +/- coula from sigma1;
         # beta and beta_p are their orientations, counterclockwise from +x
         beta = p_angles - coula
         beta_p = 2*p_angles - beta
-        ax.quiver(x, y, np.cos(beta), np.sin(beta), headlength=0, pivot='middle', scale=0.0090, units='xy',
-                  width=10, headwidth=1, color='#4DAD4B', alpha=0.8)
-        ax.quiver(x, y, np.cos(beta_p), np.sin(beta_p), headlength=0, pivot='middle', scale=0.0090, units='xy',
-                  width=10, headwidth=1, color='#FA422B', alpha=0.8)
+        ax.quiver(x, y, np.cos(beta), np.sin(beta), color='#4DAD4B', alpha=0.8, **seg)
+        ax.quiver(x, y, np.cos(beta_p), np.sin(beta_p), color='#FA422B', alpha=0.8, **seg)
     return figure
 
 
-def plot_plane_stresses(res, stress, angle, step):
+def plot_plane_stresses(res, stress, angle, step=None):
     """
     Normal ('normal') or shear ('shear') stress on the optimal shear planes,
     in MPa (formerly model.plot_plane_stresses). angle is only written in the
-    label box; step is the contour step in MPa.
+    label box; step is the contour step in MPa, or None (the default since
+    Nov 2026) for a round one chosen from the values.
     """
     _require(res, 'sn', 'ss')
     meta = res.metadata ; crack = meta['crack']
@@ -313,35 +341,63 @@ def plot_plane_stresses(res, stress, angle, step):
 
 def plot_crack_opening(crack, v, E):
     """
-    Displacements of the crack walls in mode I (formerly
-    crack.plot_mode_I_crack_displacements). crack: a crack object,
-    v: Poisson's ratio, E: Young's modulus in Pa.
-    """
-    # Wall displacements at 50 points along the crack, from one tip to the other
-    disps = crack.mode_I_crack_displacements(v, E)
-    h = crack.extent()
-    length = np.linspace(-h/2, h/2, 50)
+    Displacements of the crack walls (formerly crack.plot_mode_I_crack_displacements):
+    the component normal to the crack (opening, lines) and along it (slip, points)
+    of each wall, and the out-of-plane one (mode III) if there is any.
+    crack: a crack object, v: Poisson's ratio, E: Young's modulus in Pa.
 
-    # ux of both walls as lines, uy of both walls as points; the legend gives the inputs
-    figure = plt.figure(figsize=(7, 4))
-    ax = figure.add_subplot(111, xlabel='y distance from crack center (m)', ylabel=r'u$_i$ (m)')
-    ax.plot(length, disps[0], c='purple', ls='--', lw=2, label=r'u$_x$, x>0')
-    ax.plot(length, disps[1], c='purple', ls=':', lw=2, label=r'u$_x$, x<0')
-    ax.scatter(length, disps[2], c='peru', facecolor='white', alpha=0.5, edgecolor='black', marker='o', s=40,
-               label=r'u$_y$, x>0')
-    ax.scatter(length, disps[3], c='brown', marker='o', s=5, label=r'u$_y$, x<0')
-    ax.legend(title=r'$\sigma_e$ = ' + str(crack.dpx/1E6) + ' MPa\nv =' + str(v) + '\nE = ' + str(E/1E9)
-              + ' GPa\na = ' + str(round(h/2/1E3, 2)) + ' km', bbox_to_anchor=(1, 1))
+    Since Nov 2026 the displacements come from crack.wall_displacements (the core
+    solution, valid for modes I, II and III); until then only the mode I opening
+    was drawn (Eq. 7.21 of Pollard and Martel, 2020), so a fault came out flat.
+    """
+    s, walls = crack.wall_displacements(v, E)
+    pos, neg = walls['positive'], walls['negative']
+    half = crack.extent()/2
+
+    figure = plt.figure(figsize=(7.5, 4.2))
+    ax = figure.add_subplot(111, xlabel='distance along the crack from its centre (m)', ylabel=r'u$_i$ (m)')
+    # Normal to the crack (opening): lines; along the crack (slip): points
+    ax.plot(s, pos['normal'], c='purple', ls='--', lw=2, label=r'u$_n$, + side')
+    ax.plot(s, neg['normal'], c='purple', ls=':', lw=2, label=r'u$_n$, − side')
+    ax.scatter(s, pos['tangential'], facecolor='white', edgecolor='peru', marker='o', s=36, lw=1.2,
+               label=r'u$_t$, + side')
+    ax.scatter(s, neg['tangential'], c='brown', marker='o', s=6, label=r'u$_t$, − side')
+    # Out of the X-Y plane (mode III), only if there is any
+    if np.nanmax(np.abs(pos['z'])) > 0:
+        ax.plot(s, pos['z'], c='teal', ls='-', lw=1.5, label=r'u$_z$, + side')
+        ax.plot(s, neg['z'], c='teal', ls='-.', lw=1.5, label=r'u$_z$, − side')
+    ax.axhline(0, c='0.7', lw=0.6, zorder=0)
+
+    # The inputs, rounded; only the driving stresses that are not zero
+    stresses = [(r'$\sigma_I$', crack.dpx), (r'$\sigma_{II}$', crack.dpy), (r'$\sigma_{III}$', crack.dpz)]
+    title = '\n'.join(name + ' = ' + ('%g' % round(value/1e6, 2)) + ' MPa' for name, value in stresses if value != 0)
+    title = (title + '\n' if title else '') + r'$\nu$ = %g' % v + '\nE = %g GPa' % round(E/1e9, 2) \
+        + '\nhalf-length = %g km' % round(half/1e3, 3)
+    ax.legend(title=title, bbox_to_anchor=(1, 1), fontsize=9, title_fontsize=9)
+    ax.text(0.01, 0.01, '+ side: normal n = (−t$_y$, t$_x$), t from the upper to the lower tip',
+            transform=ax.transAxes, fontsize=7, color='0.4')
     return figure
 
 
-def plot_dynamic_step(step, downscaling):
+def dynamic_color_range(dyn):
+    """
+    Colour range of sigma_n for every step of a dynamic model: the range of the
+    final step, which holds every failure of the run (Sam's choice, Nov 2026),
+    so that the steps can be compared. Pass it to plot_dynamic_step.
+    """
+    return tuple(true_min_max(dyn[-1]['failure_sn']))
+
+
+def plot_dynamic_step(step, downscaling, color_range=None):
     """
     Figure of one step of the dynamic model (the drawing code formerly inside
     the loop of dynamic_model, moved unchanged in Nov 2026).
     
     step: one DiESResults of a DynamicResults (compute_dynamic_model),
-    downscaling: int, keep one plane trace every downscaling nodes.
+    downscaling: int, keep one plane trace every downscaling nodes,
+    color_range: (vmin, vmax) of sigma_n in MPa, the same for every step of a
+    run (dynamic_color_range); None uses the range of this step, as until
+    Nov 2026.
     
     It maps the normal stress on the failure planes (MPa), marks in red the
     nodes above failure and draws the traces of the failure planes: mode II
@@ -361,9 +417,9 @@ def plot_dynamic_step(step, downscaling):
     ax = figure.axes[0]
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='red', lw=3, label='Crack')
     
-    # Plotting stresses
-    plot = ax.pcolormesh(x, y, current_sn, cmap='viridis', vmin=true_min_max(current_sn)[0],
-                         vmax=true_min_max(current_sn)[1], shading='nearest')
+    # Plotting stresses, with the colour range of the run (or of this step)
+    vmin, vmax = color_range if color_range is not None else true_min_max(current_sn)
+    plot = ax.pcolormesh(x, y, current_sn, cmap='viridis', vmin=vmin, vmax=vmax, shading='nearest')
     cbar = figure.colorbar(plot, extend='both', format='%.2f')
     cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
     cbar.ax.tick_params(labelsize=12)
@@ -372,7 +428,9 @@ def plot_dynamic_step(step, downscaling):
     # Plotting the gridcells which are found above failure in each timestep
     ax.pcolormesh(x, y, current_above, cmap='Reds_r', shading='nearest')
     
-    # Plotting downsampled versions of the failure plane orientations
+    # Plotting downsampled versions of the failure plane orientations, one every
+    # downscaling nodes in each direction
+    trace_spacing = _cell_size(step)*downscaling
     ds = {name: downsample_2darray(step[name], downscaling) for name in
           ('plane_mixed_right', 'plane_tc_right', 'plane_comp_right',
            'plane_mixed_left', 'plane_tc_left', 'plane_comp_left', 'plane_mode_I')}
@@ -382,15 +440,17 @@ def plot_dynamic_step(step, downscaling):
                          ('plane_tc_right', 'purple'), ('plane_tc_left', 'purple'),      # mode II, tension-compression
                          ('plane_mixed_right', 'dodgerblue'), ('plane_mixed_left', 'dodgerblue'),  # mixed mode
                          ('plane_mode_I', 'blue')):                                     # mode I
-        ax.quiver(x, y, np.cos(ds[name]), np.sin(ds[name]),
-                  headlength=0, pivot='middle', scale=0.0040, units='xy', width=20, headwidth=1, color=colour)
+        # Traces 0.9 times the spacing between the traces drawn (Nov 2026; until then a fixed 250 m)
+        ax.quiver(x, y, np.cos(ds[name]), np.sin(ds[name]), headlength=0, headaxislength=0, pivot='middle',
+                  scale=1/(0.9*trace_spacing), units='xy', width=0.08*trace_spacing, headwidth=1, color=colour)
     
-    # Box with the aperture or slip and the driving stresses reached at this step
-    ax.text(0.97, 0.14, length_label + '·' + str(round(percentage, 4)) + ' = ' + str(round(length, 2)) + ' m\n' +
+    # Box with the aperture or slip and the driving stresses reached at this step,
+    # anchored at its bottom inside the axes (until Nov 2026 it ran over the x labels)
+    ax.text(0.97, 0.03, length_label + '·' + str(round(percentage, 4)) + ' = ' + str(round(length, 2)) + ' m\n' +
             r'$\sigma_I$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dx/1e6, 2)) + ' MPa\n' +
             r'$\sigma_{II}$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dy/1e6, 2)) + ' MPa',
             bbox=dict(fc='white', ec='black'),
-            horizontalalignment='right', verticalalignment='top',
+            horizontalalignment='right', verticalalignment='bottom',
             transform=ax.transAxes, fontsize=11, zorder=5)
     return figure
 

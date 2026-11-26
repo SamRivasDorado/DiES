@@ -146,6 +146,56 @@ def test_mohr_circle():
         raise AssertionError('no PlotError for a singular state')
 
 
+
+def test_wall_displacements_match_the_analytical_profiles():
+    """crack.wall_displacements (core solution off each wall, Nov 2026) against Eq. 7.21
+    of Pollard and Martel (mode I) and the elliptical slip of mode II, vertical and inclined."""
+    E, nu = 30e9, 0.25
+    dike = crack((0, -1000), (0, -5000), 8e6, 0, 0)
+    s, walls = dike.wall_displacements(nu, E)
+    ux_pos, ux_neg, uy_pos, uy_neg = dike.mode_I_crack_displacements(nu, E)
+    peak = ux_pos.max()
+    assert np.max(np.abs(walls['positive']['normal'] - ux_pos)) < 1e-3*peak
+    assert np.max(np.abs(walls['negative']['normal'] - ux_neg)) < 1e-3*peak
+    # Eq. 7.21 measures along the crack in the same sense as s
+    assert np.max(np.abs(walls['positive']['tangential'] - uy_pos)) < 1e-3*peak
+    for lower in ((0, -5000), (500, -1000 - 1000*np.tan(np.radians(60)))):
+        fault = crack((0 if lower[0] == 0 else -500, -1000), lower, 0, 15e6, 0)
+        s, walls = fault.wall_displacements(nu, E)
+        half = fault.extent()/2
+        slip = (1 - nu)*15e6*np.sqrt(half**2 - s**2)/G(E, nu)
+        assert np.max(np.abs(np.abs(walls['positive']['tangential']) - slip)) < 1e-3*slip.max()
+        # Opposite walls slide in opposite senses; the normal component is the same on both
+        assert np.all(walls['positive']['tangential'][1:-1]*walls['negative']['tangential'][1:-1] < 0)
+        assert np.allclose(walls['positive']['normal'], walls['negative']['normal'], atol=1e-3*slip.max())
+    # The figure of a fault is no longer flat
+    fig = plotting.plot_crack_opening(fault, nu, E)
+    assert any(np.nanmax(np.abs(np.asarray(c.get_offsets())[:, 1])) > 0.5 for c in fig.axes[0].collections)
+    plt.close(fig)
+
+
+def test_automatic_contour_steps_and_constant_fields():
+    from Helper_functions import nice_step, auto_contour_step, boundaries_contours
+    assert nice_step(150, 12) == 20 and nice_step(37, 12) == 5 and nice_step(0.6, 12) == 0.05
+    assert nice_step(0, 12) is None
+    values = np.linspace(12, 148, 100)
+    p1, p99, levels = boundaries_contours(values)        # step None: automatic
+    assert auto_contour_step(values) == 20 and np.allclose(levels % 20, 0) and 3 <= len(levels) <= 12
+    assert np.allclose(boundaries_contours(values, 25)[2], [25, 50, 75, 100, 125])   # a step can still be forced
+    # A field that is zero everywhere gets a note instead of an empty colour scale
+    m, disc = small_case()
+    res = m.compute(disc, 0, 0, False)
+    fig = plotting.plot_stresses(res, 'sxza')
+    texts = [t.get_text() for t in fig.axes[0].texts]
+    assert any('everywhere' in t for t in texts), texts
+    plt.close(fig)
+    # The sigma1 angle uses a cyclic colour scale from -90 to 90
+    fig = plotting.plot_principal_stresses(res, 'angle')
+    mesh = [c for c in fig.axes[0].collections if hasattr(c, 'get_cmap')][0]
+    assert mesh.get_cmap().name == 'twilight' and mesh.get_clim() == (-90, 90)
+    plt.close(fig)
+
+
 if __name__ == '__main__':
     tests = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     for test in tests:

@@ -563,10 +563,55 @@ class crack(object):
         
         return ux_pos, ux_neg, uy_pos, uy_neg
     
+    def wall_displacements(self,v,E,n_points=50):
+        """
+        Displacements of the two walls of the crack, computed with the analytical
+        solution of the core (displacements) at points just off each wall, and
+        projected on the crack: valid for any combination of modes I, II and III
+        and any orientation (Phase 2, Nov 2026). For mode I they agree with Eq. 7.21
+        of Pollard and Martel (2020), used by mode_I_crack_displacements.
+        
+        v = Poissons ratio (unitless), E = Youngs Modulus in Pa,
+        n_points = number of points along the crack, from tip to tip.
+        
+        Returns
+        -------
+        s : distance along the crack from its centre, in m, positive towards
+            the lower tip
+        walls : dict with, for the 'positive' and 'negative' wall, a dict of
+            'normal' (m, along the normal n = (-t_y, t_x), where t points from
+            the upper to the lower tip; for a vertical crack n = +x),
+            'tangential' (m, along t) and 'z' (m, out of the X-Y plane).
+            The walls are on the +n and -n sides. The opening is
+            normal(positive) - normal(negative); the slip,
+            tangential(positive) - tangential(negative).
+        """
+        up=np.asarray(self.up_tip(),dtype=float) ; low=np.asarray(self.low_tip(),dtype=float)
+        centre=np.asarray(self.c(),dtype=float)
+        length=np.linalg.norm(low-up)
+        
+        # Unit vectors along (t) and normal to (n) the crack
+        t=(low-up)/length ; n=np.array([-t[1],t[0]])
+        s=np.linspace(-length/2,length/2,n_points)
+        
+        # Points a tiny distance (1e-7 of the length) off each wall; on the wall
+        # itself the solution is discontinuous
+        offset=1e-7*length
+        walls={}
+        for name,sign in (('positive',1),('negative',-1)):
+            px=centre[0]+t[0]*s+sign*offset*n[0]
+            py=centre[1]+t[1]*s+sign*offset*n[1]
+            ux,uy,uz=displacements(self.x(),self.y(),self.z(),v,E,self.up_tip(),self.c(),self.low_tip(),(px,py))
+            walls[name]={'normal':ux*n[0]+uy*n[1], 'tangential':ux*t[0]+uy*t[1],
+                         'z':np.broadcast_to(uz,s.shape).astype(float)}
+        return s, walls
+    
     def plot_mode_I_crack_displacements(self,v,E):
         """
         Calculates and plots the displacements at the crack's 
         discontinuity given the host rock mechanical properties.
+        Since Nov 2026 it draws the opening and the slip of any crack
+        (wall_displacements), not only the mode I opening.
         
         Returns the figure plotting said displacements.
         """
@@ -916,7 +961,7 @@ class model(object):
                 
         return dx,dy,dz
     
-    def plot_displacement(self, crack, displacement, option, step):
+    def plot_displacement(self, crack, displacement, option, step=None):
         """
         Parameters
         ----------
@@ -992,7 +1037,7 @@ class model(object):
             
         return sxa, sya, sav, sxya, sxza, szza, ta
     
-    def plot_stresses(self,crack,stress,s11,s22,boolean,step):
+    def plot_stresses(self,crack,stress,s11,s22,boolean,step=None):
         """
         Parameters
         ----------
@@ -1055,7 +1100,7 @@ class model(object):
         # sxx, syy and sxy, tension positive (sxy is the 4th output of model_stresses)
         return principal_from_stresses(s[0],s[1],s[3])
     
-    def plot_principal_stresses(self, crack, stress, s11, s22, boolean, step):
+    def plot_principal_stresses(self, crack, stress, s11, s22, boolean, step=None):
         """
 
         Parameters
@@ -1143,7 +1188,7 @@ class model(object):
         return optimal_plane_stresses(s1,s3,coula)
     
     
-    def plot_plane_stresses(self, crack, stress, s11, s22, angle, boolean, step):
+    def plot_plane_stresses(self, crack, stress, s11, s22, angle, boolean, step=None):
         """
         Parameters
         ----------

@@ -181,35 +181,38 @@ def single_model(crack_inputs, model_inputs, dx, dy, dz, rx,ry,g,litho,angle,xli
     
     grid=current_model.grid()
 
+    # The contour steps are chosen automatically from the values (step None;
+    # Nov 2026). Until then each parameter had a fixed step (0.25-5 MPa or m),
+    # too dense for the stresses of deep models with Earth gravity.
     if parameter=='ux':
-        plot=current_model.plot_displacement(disc, 'ux', 'vectors', 0.25)
+        plot=current_model.plot_displacement(disc, 'ux', 'vectors', None)
     elif parameter=='uy':
-        plot=current_model.plot_displacement(disc, 'uy', 'vectors', 0.50)    
+        plot=current_model.plot_displacement(disc, 'uy', 'vectors', None)    
     elif parameter=='uxy':
-        plot=current_model.plot_displacement(disc, 'uxy', 'vectors', 0.25)
+        plot=current_model.plot_displacement(disc, 'uxy', 'vectors', None)
     
     elif parameter=='sx':
-        plot=current_model.plot_stresses(disc,'sxa',rx, ry,litho,2.5)
+        plot=current_model.plot_stresses(disc,'sxa',rx, ry,litho, None)
     elif parameter=='sy':
-        plot=current_model.plot_stresses(disc,'sya',rx, ry,litho,5)
+        plot=current_model.plot_stresses(disc,'sya',rx, ry,litho, None)
     elif parameter=='sxy':
-        plot=current_model.plot_stresses(disc,'sxya',rx, ry,litho,1)
+        plot=current_model.plot_stresses(disc,'sxya',rx, ry,litho, None)
     elif parameter=='sav': 
-        plot=current_model.plot_stresses(disc,'sav',rx, ry,litho,5)
+        plot=current_model.plot_stresses(disc,'sav',rx, ry,litho, None)
     elif parameter=='t':
-        plot=current_model.plot_stresses(disc,'ta',rx, ry,litho,5)
+        plot=current_model.plot_stresses(disc,'ta',rx, ry,litho, None)
     
     elif parameter=='s1':
-        plot=current_model.plot_principal_stresses(disc, 'principal',rx, ry, litho, 5)
+        plot=current_model.plot_principal_stresses(disc, 'principal',rx, ry, litho, None)
     elif parameter=='s3':
-        plot=current_model.plot_principal_stresses(disc, 'secondary',rx, ry, litho, 2.5)
+        plot=current_model.plot_principal_stresses(disc, 'secondary',rx, ry, litho, None)
     elif parameter=='st':
         plot=current_model.plot_stress_trajectories(disc,False, rx, ry,litho)
     
     elif parameter=='sn':
-        plot=current_model.plot_plane_stresses(disc,'normal',rx,ry,angle,litho,0.5)
+        plot=current_model.plot_plane_stresses(disc,'normal',rx,ry,angle,litho, None)
     elif parameter=='ss':
-        plot=current_model.plot_plane_stresses(disc,'shear',rx,ry,angle,litho,0.5)
+        plot=current_model.plot_plane_stresses(disc,'shear',rx,ry,angle,litho, None)
    
     return plot
     
@@ -490,9 +493,11 @@ def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation
     if plotting:
         young=model_inputs[0] ; tension=model_inputs[4]
         shear=G(model_inputs[0],model_inputs[1])
+        color_range=dies_plotting.dynamic_color_range(results)
         for step_results in results:
             meta=step_results.metadata
-            figure=dies_plotting.plot_dynamic_step(step_results, downscaling)
+            # The same colour range for every step: that of the final step (Nov 2026)
+            figure=dies_plotting.plot_dynamic_step(step_results, downscaling, color_range)
             figure.savefig(os.path.join(folder,'sn'+'_'+str(round(shear/1e9,2))+'_'+str(young/1e9)+'_'+str(tension/1e6)
                                         +'_'+str(meta['step'])+'_'+str(round(meta['dx']/1e6,2))+'_MPa.png'),dpi=300)
             plt.close(figure)

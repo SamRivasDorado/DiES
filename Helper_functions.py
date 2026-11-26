@@ -268,8 +268,8 @@ def downsample_2darray(array,rate):
 
 def create_figure(x_limits,y_limits):
     """
-    Empty figure with the model limits, axis labels in m and ticks every
-    1000 m (x) and 500 m (y), used by the dynamic model figures.
+    Empty figure with the model limits, axis labels in m and ticks at round
+    intervals (model_locators), used by the dynamic model figures.
     """
     
     figure=plt.figure(figsize=(6,4),tight_layout=True)
@@ -278,10 +278,8 @@ def create_figure(x_limits,y_limits):
     ax.set_ylabel('Y (m)')
     ax.tick_params(labelsize=12, axis='both')
     
-    ax.xaxis.set_major_locator(MultipleLocator(1000))
-    ax.xaxis.set_minor_locator(MultipleLocator(100))
-    ax.yaxis.set_major_locator(MultipleLocator(500))
-    ax.yaxis.set_minor_locator(MultipleLocator(100))
+    # Major ticks that do not overlap, whatever the size of the model
+    model_locators(ax,x_limits,y_limits)
     
     return figure
 
@@ -332,39 +330,93 @@ def scale_arrows(dpx,dpy,dx,dy):
             
     return maximum,denom
 
-def boundaries_contours(values,step):
+def boundaries_contours(values,step=None):
     """
     Takes a set of values, which can represent anything, but should usually
     be 2D arrays representing the values of a 2D mesh, and 
-    step: a float representing the desired contour interval.
+    step: a float representing the desired contour interval, or None to
+    choose it automatically (auto_contour_step).
     
-    Returns the p1 and p99 of said set of values, as two integers, and an 
-    array of floats/integers which represent the values at which to plot 
-    contours between the boundaries. This array should be used with the 
-    contours method within matplotlib.
+    Returns the p1 and p99 of said set of values, and an array with the
+    values at which to plot contours between them. This array should be used
+    with the contours method within matplotlib.
+    
+    Since Nov 2026 (Phase 2, figures): NaN values (e.g. nodes on a crack tip)
+    are ignored, and the contour levels are multiples of the step. Until then
+    they started at p1 (steps < 1) or at p1 rounded down to a multiple of 5.
     """
     
-    # A 2D array is flattened into a single list of values
-    if values.ndim!=1:
-        values=np.concatenate(values)
+    # Flattened, without NaN (nodes on the crack tips)
+    values=np.asarray(values,dtype=float).ravel()
+    values=values[np.isfinite(values)]
+    if values.size==0:
+        return 0.0, 1.0, np.array([])
         
     # The 1st and 99th percentiles are used as colour limits, so that the
     # extreme values next to the crack tips do not saturate the colour scale
     p99=np.percentile(values,99)
     p1=np.percentile(values,1)
+    
+    if step is None:
+        step=auto_contour_step(values)
+    if step is None:
+        # Constant field: no contours
+        return p1, p99, np.array([])
         
-    # Contour levels every step between the limits; for steps of 1 or more,
-    # the first level is rounded down to a multiple of 5 (or starts at 0)
-    if step<1:
-        new_contours=np.arange(p1,p99,step)
-
-    elif step>=1:
-        if min(values)==0:
-            new_contours=np.arange(0,int(p99),step)
-        else:
-            new_contours=np.arange(p1-p1%5,p99,step)
+    # Contour levels at the multiples of step between the limits
+    first=np.ceil(p1/step)*step
+    new_contours=np.arange(first,p99+step*1e-9,step)
     
     return p1,p99,new_contours
+
+
+def nice_step(span,max_count):
+    """
+    The smallest 'round' step (1, 2, 2.5 or 5 times a power of 10) that
+    divides span into at most max_count intervals. None if span is not > 0.
+    Used for contour intervals and axis ticks (Phase 2, Nov 2026).
+    """
+    if not np.isfinite(span) or span<=0:
+        return None
+    # Power of ten just below the step that would give exactly max_count intervals
+    magnitude=10**np.floor(np.log10(span/max_count))
+    for factor in (1,2,2.5,5,10):
+        if span/(factor*magnitude)<=max_count:
+            return float(factor*magnitude)
+    return float(10*magnitude)
+
+
+def auto_contour_step(values,target=12):
+    """
+    Automatic contour interval for a field (Phase 2, Nov 2026): a round step
+    (1, 2, 2.5 or 5 times a power of 10) giving at most `target` contours
+    between the 1st and 99th percentiles of the values. Returns None for a
+    constant field (or one without finite values). In the dynamic models the
+    values of the final step are used, so that the final figure is the one
+    that looks right. It is a starting point: every figure accepts a step.
+    """
+    values=np.asarray(values,dtype=float).ravel()
+    values=values[np.isfinite(values)]
+    if values.size==0:
+        return None
+    span=np.percentile(values,99)-np.percentile(values,1)
+    return nice_step(span,target)
+
+
+def model_locators(ax,x_limits,y_limits):
+    """
+    Major ticks at round intervals, at most 6 labels along x and 13 along y
+    (so that the labels of a 10 km wide model do not overlap), and automatic
+    minor ticks. Until Nov 2026 the major ticks were every 1000 m (x) and
+    500 m (y) whatever the size of the model.
+    """
+    from matplotlib.ticker import AutoMinorLocator
+    x_step=nice_step(abs(x_limits[1]-x_limits[0]),6) or 1000
+    y_step=nice_step(abs(y_limits[1]-y_limits[0]),13) or 500
+    ax.xaxis.set_major_locator(MultipleLocator(x_step))
+    ax.yaxis.set_major_locator(MultipleLocator(y_step))
+    ax.xaxis.set_minor_locator(AutoMinorLocator())
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
 
 ########################### Geology functions ###########################
     

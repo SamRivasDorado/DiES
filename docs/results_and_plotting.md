@@ -46,12 +46,24 @@ res.save('model.npz') ; res = DiESResults.load('model.npz')
 res.to_csv('model.csv', names=['s1', 's3', 'ux'])
 res.to_xarray()         # optional: only needs xarray when called
 
-fig = plotting.plot_stresses(res, 'sxy', 1)             # or the former key 'sxya'
-fig = plotting.plot_principal_stresses(res, 'angle', 10)
+fig = plotting.plot_stresses(res, 'sxy')               # automatic contour step
+fig = plotting.plot_stresses(res, 'sxy', 1)            # or a step of your choice (MPa)
+fig = plotting.plot_principal_stresses(res, 'angle')
 fig = plotting.plot_stress_trajectories(res, planes=True)
-fig = plotting.plot_plane_stresses(res, 'normal', 60, 5)
-fig = plotting.plot_displacement(res, 'uxy', 'vectors', 0.25)
+fig = plotting.plot_plane_stresses(res, 'normal', 60)
+fig = plotting.plot_displacement(res, 'uxy', 'vectors')
+fig = plotting.plot_crack_opening(crack, nu, E)        # opening and slip of the crack walls
+s, walls = crack.wall_displacements(nu, E)             # the same profiles, as arrays
 ```
+
+**Contour steps** (since Phase 2, Nov 2026): the `step` of every figure is optional. Without
+it, a round step (1, 2, 2.5 or 5 times a power of ten) giving at most ~12 contours between the
+1st and 99th percentiles of the field is chosen (`Helper_functions.auto_contour_step`), and the
+contour levels are multiples of the step. It is a starting point: pass a step to choose another
+one after looking at the figure. A field that is the same everywhere (e.g. `sxz` without mode III
+loading) shows a note instead of an empty colour scale. The orientation of σ1 (`'angle'`) uses
+a cyclic colour scale (`twilight`, −90° to 90°, the same colour for both ends, which are the same
+orientation) and no contours.
 
 `compute(..., displacements=True, stresses=False)` computes only part of the fields, for
 instance for a displacement figure.
@@ -78,7 +90,8 @@ len(dyn) ; dyn[-1]                 # number of steps ; last step (a DiESResults)
 dyn.final_mode()                   # failure mode of each node at the last step
 dyn.failure_step()                 # step at which each node first failed (0 = never)
 dyn[k].metadata['dx']              # driving stresses, aperture/slip... of step k
-fig = plotting.plot_dynamic_step(dyn[k], downscaling=2)
+color_range = plotting.dynamic_color_range(dyn)  # sigma_n range of the final step
+fig = plotting.plot_dynamic_step(dyn[k], 2, color_range)
 dyn.save('dynamic.npz') ; dyn = DynamicResults.load('dynamic.npz')
 ```
 
@@ -146,7 +159,20 @@ Each step also has every `DiESResults` method (`probe`, `profile`, `mask`, `to_c
   An `output` other than `'values'` or `'plot'` raises `InputError` (it used to return `None`).
 - The figures of `plotting.py` raise `plotting.PlotError` for an invalid option or a field that
   the results do not contain.
-- No aesthetic change: the improvements listed in the roadmap are planned for Phase 2.
+- No aesthetic change in Phase 1. Phase 2 (Nov 2026) changed the figures:
+  - automatic contour steps (above), in `single_model` too; levels at multiples of the step;
+  - major ticks at round intervals that do not overlap (at most 6 labels in x);
+  - σ1 orientation with a cyclic colour scale;
+  - stress trajectories and failure-plane traces scaled with the spacing of the grid (until then
+    111 m and 250 m whatever the grid), and the two colour bars of the trajectories under the map;
+  - the dynamic model draws every step with the σn colour range of the final step
+    (`dynamic_model` and `dynamic_color_range`; `plot_dynamic_step` without it keeps the range of
+    the step), with its text box inside the axes;
+  - `plot_crack_opening` (and `crack.plot_mode_I_crack_displacements`) draws the opening and the
+    slip of both walls, and mode III if any, from the core solution (`crack.wall_displacements`);
+    until then only the mode I opening, so a fault came out flat. Rounded values in its legend,
+    and the half-length of the crack labelled as such (it was 'a', the symbol of the aperture);
+  - fields that are the same everywhere show a note.
 
 ## Tests
 

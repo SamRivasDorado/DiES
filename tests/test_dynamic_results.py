@@ -85,8 +85,10 @@ def test_saved_figures_equal_plot_dynamic_step():
     files = sorted(glob.glob(os.path.join(folder, '*.png')), key=lambda p: int(os.path.basename(p).split('_')[-3]))
     assert len(files) == len(STEPS)
     results = compute()
+    # Since Nov 2026 dynamic_model draws every step with the colour range of the final step
+    color_range = plotting.dynamic_color_range(results)
     for path, step in zip(files, results):
-        figure = plotting.plot_dynamic_step(step, 2)
+        figure = plotting.plot_dynamic_step(step, 2, color_range)
         buffer = io.BytesIO()
         figure.savefig(buffer, dpi=300, format='png')
         plt.close(figure)

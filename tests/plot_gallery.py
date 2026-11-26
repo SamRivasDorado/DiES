@@ -58,28 +58,45 @@ def build(name):
     return title, disc, stress_model, vector_model
 
 
+def _draw(function, *args, legacy_step):
+    """
+    Calls a figure function without a contour step (automatic, since Nov 2026). With
+    the code of an older commit, which requires a step (tests/compare_figures.py
+    draws this gallery with older commits), it falls back to the fixed step used
+    until then.
+    """
+    try:
+        return function(*args)
+    except TypeError:
+        return function(*args, legacy_step)
+
+
 def figures(name, litho, rx, ry, angle):
     """
     Yields (label, figure) for every static figure of one case. Since Phase 1
     (Nov 2026) each grid is computed once (model.compute) and every figure is
     drawn from those results with plotting.py; the figures are identical to
-    those of the model.plot_* methods.
+    those of the model.plot_* methods. Since the figures of Phase 2 (Nov 2026)
+    the contour steps are the automatic ones (step=None), as in single_model.
     """
     title, disc, m, mv = build(name)
     res = m.compute(disc, rx, ry, litho)        # fine grid: contours and scalar fields
     res_v = mv.compute(disc, rx, ry, litho)     # coarse grid: vectors and trajectories
     for comp in ('ux', 'uy', 'uxy'):
-        yield 'plot_displacement ' + comp + ', vectors', plotting.plot_displacement(res_v, comp, 'vectors', 0.25)
-        yield 'plot_displacement ' + comp + ', contours', plotting.plot_displacement(res, comp, 'contours', 0.1)
-    for stress, step in (('sxa', 2.5), ('sya', 5), ('sav', 5), ('sxya', 1), ('sxza', 1), ('sza', 5), ('ta', 1)):
-        yield 'plot_stresses ' + stress, plotting.plot_stresses(res, stress, step)
-    for stress, step in (('principal', 5), ('secondary', 2.5), ('angle', 10)):
-        yield 'plot_principal_stresses ' + stress, plotting.plot_principal_stresses(res, stress, step)
+        yield 'plot_displacement ' + comp + ', vectors', \
+              _draw(plotting.plot_displacement, res_v, comp, 'vectors', legacy_step=0.25)
+        yield 'plot_displacement ' + comp + ', contours', \
+              _draw(plotting.plot_displacement, res, comp, 'contours', legacy_step=0.1)
+    for stress, legacy in (('sxa', 2.5), ('sya', 5), ('sav', 5), ('sxya', 1), ('sxza', 1), ('sza', 5), ('ta', 1)):
+        yield 'plot_stresses ' + stress, _draw(plotting.plot_stresses, res, stress, legacy_step=legacy)
+    for stress, legacy in (('principal', 5), ('secondary', 2.5), ('angle', 10)):
+        yield 'plot_principal_stresses ' + stress, \
+              _draw(plotting.plot_principal_stresses, res, stress, legacy_step=legacy)
     for planes in (False, True):
         yield 'plot_stress_trajectories, planes=' + str(planes), plotting.plot_stress_trajectories(res_v, planes)
     for stress in ('normal', 'shear'):
         yield 'plot_plane_stresses ' + stress + ', planes at ' + str(angle) + '°', \
-              plotting.plot_plane_stresses(res, stress, angle, 0.5)
+              _draw(plotting.plot_plane_stresses, res, stress, angle, legacy_step=0.5)
     yield 'crack.plot_mode_I_crack_displacements', plotting.plot_crack_opening(disc, MODEL_INPUTS[1], MODEL_INPUTS[0])
 
 
@@ -113,13 +130,15 @@ def dynamic_figures(name, litho, rx, ry, folder, steps, show_every):
                                     XLIMS, YLIMS, RESOLUTION)
     E, nu, T = MODEL_INPUTS[0], MODEL_INPUTS[1], MODEL_INPUTS[4]
     paths = []
+    # One colour range for every step: that of the final step (Nov 2026; None with older code)
+    color_range = plotting.dynamic_color_range(results) if hasattr(plotting, 'dynamic_color_range') else None
     for k, step in enumerate(results, start=1):
         if k % show_every and k != len(results):
             continue
         meta = step.metadata
         path = os.path.join(folder, 'sn_' + str(round(G(E, nu)/1e9, 2)) + '_' + str(E/1e9) + '_' + str(T/1e6) + '_'
                             + str(meta['step']) + '_' + str(round(meta['dx']/1e6, 2)) + '_MPa.png')
-        figure = plotting.plot_dynamic_step(step, 2)
+        figure = plotting.plot_dynamic_step(step, 2, color_range) if color_range else plotting.plot_dynamic_step(step, 2)
         figure.savefig(path, dpi=300)
         plt.close(figure)
         paths.append(path)
