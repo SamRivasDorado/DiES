@@ -363,3 +363,26 @@ def test_export_zip(dike_run):
     with pytest.raises(ValueError, match='unknown figure'):
         export.export_zip(dike_run, figures=['not_a_figure'])
     assert export.folder_name('Vertical dike, opening only') == 'Vertical_dike_opening_only_results'
+
+
+def test_probe_table_edits():
+    """The edits of the probe table (st.data_editor) applied to the list of probes: edited cells
+    (an emptied one keeps its value), deleted rows and added rows (missing values from the default)."""
+    from dies.app import views
+    probes = [{'x': 0.0, 'y': -500.0, 'show': True, 'id': 1}, {'x': 1000.0, 'y': -500.0, 'show': True, 'id': 2},
+              {'x': 2000.0, 'y': -900.0, 'show': True, 'id': 3}]
+    counter = iter(range(10, 20))
+    default = {'x': -100.0, 'y': -300.0}
+    new_entry = lambda values: dict(default, show=True, **values, id=next(counter))
+    edits = {'edited_rows': {0: {'x (m)': 2500, 'On the map': False}, '2': {'y (m)': None}},
+             'deleted_rows': [1],
+             'added_rows': [{'y (m)': -1200}, {}]}
+    result = views.apply_table_edits(probes, edits, new_entry)
+    assert result == [{'x': 2500.0, 'y': -500.0, 'show': False, 'id': 1},
+                      {'x': 2000.0, 'y': -900.0, 'show': True, 'id': 3},
+                      {'x': -100.0, 'y': -1200, 'show': True, 'id': 10},
+                      {'x': -100.0, 'y': -300.0, 'show': True, 'id': 11}]
+    assert probes[0]['x'] == 0.0                     # the list given is not changed
+    assert views.apply_table_edits(probes, {}, new_entry) == probes
+    # Edits of the computed columns (not editable in the app) are ignored
+    assert views.apply_table_edits(probes, {'edited_rows': {0: {'ux (m)': 5}}}, new_entry) == probes

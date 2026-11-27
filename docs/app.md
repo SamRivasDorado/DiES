@@ -49,9 +49,10 @@ Extra arguments go to Streamlit, e.g. `dies-app --server.port 8502`.
       manual colour limits, contours and their labels, manual contour step, text box, arrow length
       and **arrow density**, one arrow every n nodes; those a figure does not take are disabled);
     - the figure, with its PNG, PDF and SVG downloads;
-    - the **probes**, added with *Add probe* and removed one by one (none at first): x and y of
-      each one, and one table with a row per probe: the node used and its displacements, stresses,
-      principal stresses and orientation of σ1, σn and τ, r/r_c and failure state;
+    - the **probes**, in one table with a row per probe (none at first): x, y and *On the map* are
+      edited in the table, and the node used and its displacements, stresses, principal stresses
+      and orientation of σ1, σn and τ, r/r_c and failure state follow; rows are added with *Add
+      probe* (or the + of the table) and removed by selecting them and deleting them in the table;
     - the **profiles**, added with *Add profile* (none at first; the first one runs along the top
       row of nodes, the surface profile; the second one through the centre of the crack), two per
       row: A and B, the plot of the fields of the figure along the line, its CSV, and a button back

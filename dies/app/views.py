@@ -248,6 +248,37 @@ def probe_table(run, points):
     return rows
 
 
+# Columns of the probe table that are edited (Sam, 27 Nov 2026: the probes are defined in
+# their own table), and the field of each probe they set
+PROBE_INPUTS = OrderedDict([('x (m)', 'x'), ('y (m)', 'y'), ('On the map', 'show')])
+
+
+def apply_table_edits(entries, edits, new_entry):
+    """
+    The probes after the edits of their table (st.data_editor: a dict with 'edited_rows'
+    {row: {column: value}}, 'added_rows' [{column: value}] and 'deleted_rows' [row]).
+    entries: the probes before, as dicts with 'x', 'y', 'show' and 'id', in the order of
+    the rows; new_entry(values): a new probe from the values given in an added row (the
+    missing ones filled by the caller). An emptied cell keeps the value it had. Returns
+    the new list (edits first, then deletions, then the added rows at the end).
+    """
+    result = [dict(entry) for entry in entries]
+    for row, change in (edits.get('edited_rows') or {}).items():
+        row = int(row)
+        if not 0 <= row < len(result):
+            continue
+        for column, value in change.items():
+            if column in PROBE_INPUTS and value is not None:
+                result[row][PROBE_INPUTS[column]] = bool(value) if column == 'On the map' else float(value)
+    deleted = {int(row) for row in (edits.get('deleted_rows') or [])}
+    result = [entry for row, entry in enumerate(result) if row not in deleted]
+    for added in edits.get('added_rows') or []:
+        values = {PROBE_INPUTS[column]: value for column, value in added.items()
+                  if column in PROBE_INPUTS and value is not None}
+        result.append(new_entry(values))
+    return result
+
+
 def profile(run, item, A, B, n=200):
     """
     The profile of the fields of a figure along A -> B: a dict with 'distance' (m), 'x',

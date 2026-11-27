@@ -13,10 +13,14 @@ State:
 - The probes and profiles are shared by all the views: their positions live in
   st.session_state['probes'] and ['profiles'] (lists of dicts, each with an id). The
   widgets of each view are set from those lists before they are drawn, and write back to
-  them when changed (on_change), so that a probe moved in one view is moved in all.
+  them when changed (on_change), so that a probe moved in one view is moved in all. The
+  probes are edited in their table (st.data_editor): its edits are applied to the list
+  (views.apply_table_edits) and a version number in the keys of the tables makes every
+  view draw its table again from the list.
 """
 
 import json
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -173,40 +177,65 @@ def _swatch(text, colour):
 
 # -------------------------------------------------------------------- probes and profiles
 
+def _apply_probe_edits(key, default):
+    """
+    Callback of the probe table: its edits go to the shared list of probes, and the
+    version of the tables goes up, so that the table of every view is drawn again from
+    the list (a table keeps its own edits until its key changes). default: the starting
+    point of a probe added as an empty row.
+    """
+    def new_entry(values):
+        st.session_state['probes_next'] = st.session_state.get('probes_next', 0) + 1
+        return dict(default, show=True, **values, id=st.session_state['probes_next'])
+
+    st.session_state['probes'] = views.apply_table_edits(_items('probes'), st.session_state[key], new_entry)
+    st.session_state['probes_version'] = st.session_state.get('probes_version', 0) + 1
+
+
+def _add_probe(values):
+    # Callback of Add probe: a new probe, and the tables drawn again
+    _add('probes', values)
+    st.session_state['probes_version'] = st.session_state.get('probes_version', 0) + 1
+
+
 def _probes(view, run):
-    """The probes: Add button, one compact row of inputs per probe, and their table. Returns the marks."""
+    """
+    The probes, in one table (Sam, 27 Nov 2026: their definition and their values together):
+    x, y and 'On the map' are edited in the table; the node used and the values at it are
+    computed. Rows are added with Add probe (or the + of the table) and removed by selecting
+    them and deleting them in the table. Returns the marks for the map.
+    """
     probes = _items('probes')
+    default = _probe_default(run, len(probes))
     head, button = st.columns([5, 1])
     head.markdown('**Probes**: the values at the node nearest to each point')
-    button.button('Add probe', key=_key(view, 'add_probe'), on_click=_add,
-                  args=('probes', _probe_default(run, len(probes))), width='stretch')
+    button.button('Add probe', key=_key(view, 'add_probe'), on_click=_add_probe, args=(default,), width='stretch')
     if not probes:
         st.caption('No probe yet: add one to read the values of every field at a point.')
         return []
-    marks, points = [], []
-    for i, entry in enumerate(probes):
-        label = 'P%d' % (i + 1)
-        c0, c1, c2, c3, c4 = st.columns([0.6, 2, 2, 1.6, 1])
-        c0.markdown(_swatch(label, figures.mark_colour(i)), unsafe_allow_html=True)
-        # The labels of the inputs only on the first row, as the header of the columns
-        shown = 'visible' if i == 0 else 'collapsed'
-        x = _bound(c1.number_input, 'x (m)', 'probes', entry, 'x', view, format='%g', step=100.0,
-                   label_visibility=shown)
-        y = _bound(c2.number_input, 'y (m)', 'probes', entry, 'y', view, format='%g', step=100.0,
-                   label_visibility=shown)
-        show = _bound(c3.checkbox, 'On the map', 'probes', entry, 'show', view)
-        c4.button('Remove', key=_key(view, 'remove_probe%d' % entry['id']), on_click=_remove,
-                  args=('probes', entry['id']), width='stretch')
-        points.append((x, y, label))
-        if show:
-            node = run.static.probe(x, y, names=[])
-            marks.append((node['x'], node['y'], label))
-    st.caption('The table gives the node used for each probe.')
-    rows = views.probe_table(run, points)
-    table = pd.DataFrame([{name: (value if isinstance(value, str) else '%.4g' % value) for name, value in row.items()}
-                          for row in rows])
-    st.dataframe(table, hide_index=True, width='stretch')
-    return marks
+    labels = ['P%d' % (i + 1) for i in range(len(probes))]
+    rows = views.probe_table(run, [(e['x'], e['y'], label) for e, label in zip(probes, labels)])
+    # The table: label, the inputs, then the node used and the values (computed)
+    table = pd.DataFrame([OrderedDict([('Probe', row['Probe']), ('x (m)', e['x']), ('y (m)', e['y']),
+                                       ('On the map', bool(e['show']))]
+                                      + [(name, value) for name, value in row.items() if name != 'Probe'])
+                          for e, row in zip(probes, rows)])
+    computed = [name for name in table.columns if name not in views.PROBE_INPUTS]
+    config = {name: st.column_config.NumberColumn(name, format='%.4g', disabled=True)
+              for name in computed if name not in ('Probe', 'Failure state')}
+    config['Probe'] = st.column_config.TextColumn('Probe', disabled=True, width='small')
+    config['Failure state'] = st.column_config.TextColumn('Failure state', disabled=True)
+    config['x (m)'] = st.column_config.NumberColumn('x (m)', format='%g', step=1.0, required=False)
+    config['y (m)'] = st.column_config.NumberColumn('y (m)', format='%g', step=1.0, required=False)
+    config['On the map'] = st.column_config.CheckboxColumn('On the map')
+    key = _key(view, 'probe_table@%d' % st.session_state.get('probes_version', 0))
+    # The hint goes above the table: the toolbar of the table, shown above it on hover, then
+    # covers the hint instead of the Add probe button
+    st.caption('Edit x, y and "On the map" in the table; the node used and its values follow. To remove probes, '
+               'select their rows (left edge of the table) and delete them.')
+    st.data_editor(table, key=key, num_rows='dynamic', hide_index=True, column_config=config, width='stretch',
+                   on_change=_apply_probe_edits, args=(key, default))
+    return [(row['node x (m)'], row['node y (m)'], row['Probe']) for e, row in zip(probes, rows) if e['show']]
 
 
 def _profile_chart_options(view):

@@ -159,12 +159,16 @@ def test_probes_and_profiles_are_added_and_shared():
     assert len(probes) == 2 and len(profiles) == 1
     top = app.session_state['static_run']['results'].static.y_nodes().max()
     assert profiles[0]['ay'] == profiles[0]['by'] == round(top, 1)
-    # Moved in Displacements, moved in Stresses too
-    app.number_input(key='Displacements.probes%d.x' % probes[0]['id']).set_value(1234.0).run()
-    assert app.session_state['Stresses.probes%d.x' % probes[0]['id']] == 1234.0
-    assert not app.exception
-    app.button(key='Stresses.remove_probe%d' % probes[0]['id']).click().run()
-    assert len(app.session_state['probes']) == 1 and not app.exception
+    # The probes are defined in their table: one row per probe in every view, with its label,
+    # its inputs and the node used (the edits themselves are tested in test_app_state.py)
+    tables = [d.value for d in app.data_editor if 'Probe' in d.value.columns]
+    assert len(tables) == 4 and all(list(t['Probe']) == ['P1', 'P2'] for t in tables)
+    assert list(tables[0].columns[:6]) == ['Probe', 'x (m)', 'y (m)', 'On the map', 'node x (m)', 'node y (m)']
+    # A profile moved in Displacements is moved in Stresses too
+    app.number_input(key='Displacements.profiles%d.ay' % profiles[0]['id']).set_value(-1500.0).run()
+    assert app.session_state['Stresses.profiles%d.ay' % profiles[0]['id']] == -1500.0
+    app.button(key='Stresses.remove_profile%d' % profiles[0]['id']).click().run()
+    assert app.session_state['profiles'] == [] and not app.exception
     # Dynamic model: the table of the last step with the shares of the nodes that fail
     app.button(key='run_dynamic').click().run()
     tables = [d.value for d in app.dataframe if 'Share of the nodes that fail' in d.value.columns]
