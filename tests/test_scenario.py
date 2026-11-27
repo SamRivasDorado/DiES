@@ -318,3 +318,19 @@ def test_plane_angle_default_is_the_optimal_angle():
     run = dies.Scenario.from_dict(raw).run()
     # 90 - coula, coula = 0.5*arctan(1/0.57)
     assert run.plane_angle() == round(90 - np.degrees(0.5*np.arctan(1/0.57)), 2) == 59.84
+
+
+def test_failure_state_figures():
+    """failure_mode and failure_ratio (Phase 4): the failure state of the static results,
+    computed once, drawn by name and written like the other figures."""
+    raw = small(dike_dict())
+    raw['analysis'] = {'type': 'static'}
+    raw['output'] = {'figures': {'static': ['failure_mode', 'failure_ratio']}, 'dpi': 40}
+    run = dies.Scenario.from_dict(raw).run()
+    state = run.failure()
+    assert state is run.failure()                      # computed once
+    np.testing.assert_array_equal(state['failure_mode'], dies.compute_failure_state(run.static)['failure_mode'])
+    names = [name for name, figure in run.figures()]
+    assert names == ['failure_mode', 'failure_ratio']
+    import matplotlib.pyplot as plt
+    plt.close('all')

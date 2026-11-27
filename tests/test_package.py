@@ -25,6 +25,7 @@ def test_facade_reexports_the_same_objects():
              (dies.single_model, Modeling_functions.single_model),
              (dies.dynamic_model, Modeling_functions.dynamic_model),
              (dies.compute_dynamic_model, Modeling_functions.compute_dynamic_model),
+             (dies.compute_failure_state, Modeling_functions.compute_failure_state),
              (dies.evaluate_stress_state, Failure_Determination.evaluate_stress_state),
              (dies.failure_contact, Failure_Determination.failure_contact),
              (dies.DiESResults, results.DiESResults), (dies.DynamicResults, results.DynamicResults),

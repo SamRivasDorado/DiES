@@ -42,7 +42,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from DiES_core import crack, model, InputError
-from Modeling_functions import layered_inputs, crack_layer_properties, compute_dynamic_model
+from Modeling_functions import layered_inputs, crack_layer_properties, compute_dynamic_model, compute_failure_state
 from Helper_functions import G, points_distance
 from results import DiESResults
 import plotting
@@ -441,6 +441,9 @@ STATIC_FIGURES = {
     'plane_normal': ('fine', lambda res, run: plotting.plot_plane_stresses(res, 'normal', run.plane_angle())),
     'plane_shear': ('fine', lambda res, run: plotting.plot_plane_stresses(res, 'shear', run.plane_angle())),
     'crack_displacements': (None, lambda res, run: plotting.plot_crack_displacements(run.crack, *_crack_material(run))),
+    # Failure state of the single model, with the crack loaded at once (Phase 4, Nov 2026)
+    'failure_mode': ('failure', lambda res, run: plotting.plot_failure_modes(res)),
+    'failure_ratio': ('failure', lambda res, run: plotting.plot_failure_ratio(res)),
 }
 RESULT_FORMATS = ('npz', 'csv')
 FIGURE_FORMATS = ('png', 'pdf', 'svg')
@@ -621,6 +624,7 @@ class ScenarioResults(object):
         self.static = static
         self.dynamic = dynamic
         self._coarse = None
+        self._failure = None
 
     def __repr__(self):
         return ('ScenarioResults(' + repr(self.scenario.name) + ', static ' + str(self.static.shape)
@@ -634,6 +638,15 @@ class ScenarioResults(object):
             self._coarse = coarse_model.compute(self.crack, rem['xx'], rem['yy'], self.scenario.data['lithostatic'])
             self._coarse.metadata['scenario'] = self.scenario.to_dict()
         return self._coarse
+
+    def failure(self):
+        """
+        Failure state of the static results (compute_failure_state: r/r_c and the failure
+        mode of each node with the crack at its final load), computed once, when needed.
+        """
+        if self._failure is None:
+            self._failure = compute_failure_state(self.static)
+        return self._failure
 
     def plane_angle(self):
         """
@@ -653,7 +666,7 @@ class ScenarioResults(object):
         if name not in STATIC_FIGURES:
             raise ScenarioError('unknown figure ' + repr(name) + '. Valid figures: ' + ', '.join(STATIC_FIGURES))
         grid, draw = STATIC_FIGURES[name]
-        res = self.coarse() if grid == 'coarse' else self.static
+        res = {'coarse': self.coarse, 'failure': self.failure}.get(grid, lambda: self.static)()
         return draw(res, self)
 
     def dynamic_steps_to_draw(self):

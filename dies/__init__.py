@@ -35,7 +35,7 @@ except ImportError:
 from DiES_core import crack, model, InputError, displacements, stresses
 
 # Models: single figures, dynamic models (computation, and the legacy wrapper that also draws)
-from Modeling_functions import single_model, dynamic_model, compute_dynamic_model
+from Modeling_functions import single_model, dynamic_model, compute_dynamic_model, compute_failure_state
 
 # Failure criterion (analytical Griffith-Coulomb tangency since Phase 2) and failure planes
 from Failure_Determination import (evaluate_stress_state, evaluate_stress_states, failure_contact,
@@ -51,7 +51,7 @@ import plotting
 from dies.scenario import load_scenario, Scenario, ScenarioResults, ScenarioError, parse_quantity
 
 __all__ = ['crack', 'model', 'InputError', 'displacements', 'stresses',
-           'single_model', 'dynamic_model', 'compute_dynamic_model',
+           'single_model', 'dynamic_model', 'compute_dynamic_model', 'compute_failure_state',
            'evaluate_stress_state', 'evaluate_stress_states', 'failure_contact',
            'failure_plane_orientation', 'FAILURE_TOLERANCE',
            'DiESResults', 'DynamicResults', 'plotting',

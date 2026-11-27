@@ -16,11 +16,22 @@ Example
     fig = plotting.plot_stresses(res, 'sxy', 1)
     fig = plotting.plot_principal_stresses(res, 'principal', 5)
     fig = plotting.plot_stress_trajectories(res, planes=True)
+
+Drawing options (Phase 4, Nov 2026): the map figures accept keyword options for
+the colour map, the colour limits, colours centred on 0, the contours and their
+labels, the text box and the length of arrows (STYLE_DEFAULTS). Their defaults
+give the figures of before, pixel for pixel. E.g.
+
+    fig = plotting.plot_stresses(res, 'sxx', cmap='RdBu_r', center_zero=True)
+
+compute_failure_state results (Modeling_functions) are drawn with
+plot_failure_modes and plot_failure_ratio.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
+from matplotlib.colors import ListedColormap, BoundaryNorm
 
 from Helper_functions import G
 from Helper_functions import boundaries_contours
@@ -47,6 +58,72 @@ STRESS_KEYS = {
 }
 # The field names are accepted too
 STRESS_KEYS.update({field: (field, label) for field, label in list(STRESS_KEYS.values())})
+
+# Drawing options of the map figures (Phase 4, Nov 2026: the plotting options of the
+# app, asked by Sam). Each one is a keyword argument, and its default gives the figure
+# of before:
+#   cmap            name of a matplotlib colour map (None: the figure's own one)
+#   limits          (vmin, vmax) of the colours (None: the 1st and 99th percentiles)
+#   center_zero     colours symmetric around 0 (with a diverging map such as RdBu_r,
+#                   0 is white); ignored if limits are given
+#   contours        draw the contours
+#   contour_labels  label the contours
+#   info_box        the box with the driving stresses (and the material)
+#   arrow_scale     length of the arrows and trajectory segments, relative to the default
+STYLE_DEFAULTS = {'cmap': None, 'limits': None, 'center_zero': False, 'contours': True,
+                  'contour_labels': True, 'info_box': True, 'arrow_scale': 1.0}
+# The options of a colour map with contours
+SCALAR_OPTIONS = ('cmap', 'limits', 'center_zero', 'contours', 'contour_labels')
+
+# Failure modes in the order of the colours of the failure-mode maps (the colours of
+# tests/failure_check.py, which Sam liked: compression in orange, so that it is not
+# confused with 'Above', in red)
+FAILURE_MODES = ['Below', 'Above', 'Mode I', 'Mixed-mode I-II', 'Mode II - tension-compression',
+                 'Mode II - compression', 'Singular']
+FAILURE_MODE_COLORS = ['#f2f2f2', '#d62728', 'blue', 'dodgerblue', 'purple', '#ff7f0e', 'black']
+
+
+def _style(options, allowed):
+    """
+    The drawing options of a figure: the defaults of STYLE_DEFAULTS for the names in
+    allowed, updated with options. Raises PlotError for an unknown or invalid option.
+    """
+    unknown = sorted(set(options) - set(allowed))
+    if unknown:
+        raise PlotError('Unknown drawing option(s): ' + ', '.join(unknown) + '. This figure accepts: '
+                        + ', '.join(allowed))
+    style = {name: STYLE_DEFAULTS[name] for name in allowed}
+    style.update(options)
+    # A colour map known to matplotlib
+    if style.get('cmap') is not None and style['cmap'] not in plt.colormaps():
+        raise PlotError('Unknown colour map ' + repr(style['cmap']))
+    # Two increasing numbers for the colour limits
+    if style.get('limits') is not None:
+        try:
+            vmin, vmax = (float(v) for v in style['limits'])
+        except (TypeError, ValueError):
+            raise PlotError('limits must be two numbers (vmin, vmax), not ' + repr(style['limits']))
+        if not vmin < vmax:
+            raise PlotError('limits must have vmin < vmax, not ' + repr(style['limits']))
+        style['limits'] = (vmin, vmax)
+    # True or False for the switches
+    for name in ('center_zero', 'contours', 'contour_labels', 'info_box'):
+        if name in style and not isinstance(style[name], bool):
+            raise PlotError(name + ' must be True or False, not ' + repr(style[name]))
+    # A positive length factor
+    if 'arrow_scale' in style and not (isinstance(style['arrow_scale'], (int, float)) and style['arrow_scale'] > 0):
+        raise PlotError('arrow_scale must be a positive number, not ' + repr(style['arrow_scale']))
+    return style
+
+
+def _colour_limits(vmin, vmax, limits, center_zero):
+    # Colour limits: those given, else (vmin, vmax), symmetric around 0 if asked
+    if limits is not None:
+        return limits
+    if center_zero:
+        largest = max(abs(vmin), abs(vmax))
+        return -largest, largest
+    return vmin, vmax
 
 
 def _require(res, *names):
@@ -98,14 +175,17 @@ def _label_contours(ax, contours):
 
 
 def _scalar_field(res, soi, label, step=None, figsize=(6, 6), locators=False, grid_lines=False,
-                  cmap='viridis', limits=None, contours=True):
+                  cmap='viridis', limits=None, contours=True, contour_labels=True, center_zero=False):
     """
     pcolormesh + contours of a field already in plotting units.
 
     step: contour interval; None chooses a round one automatically
     (Helper_functions.auto_contour_step). limits: (vmin, vmax) of the colours,
-    instead of the 1st and 99th percentiles. contours: False for no contours.
+    instead of the 1st and 99th percentiles. contours: False for no contours;
+    contour_labels: False for contours without labels; center_zero: colours
+    symmetric around 0 (Phase 4). cmap None means viridis.
     """
+    cmap = cmap or 'viridis'
     upper_tip, lower_tip = _crack_tips(res)
     x, y = res.x, res.y
     figure, ax = _axes(res, figsize, locators)
@@ -123,7 +203,7 @@ def _scalar_field(res, soi, label, step=None, figsize=(6, 6), locators=False, gr
         return figure, ax
     # Colour limits (1st and 99th percentiles) and contour levels, at multiples of step
     plot_params = boundaries_contours(soi, step)
-    vmin, vmax = limits if limits is not None else plot_params[:2]
+    vmin, vmax = _colour_limits(plot_params[0], plot_params[1], limits, center_zero)
     # Colour map of the field, with a colour bar
     plot = ax.pcolormesh(x, y, soi, cmap=cmap, vmin=vmin, vmax=vmax, shading='nearest')
     if grid_lines:
@@ -131,16 +211,17 @@ def _scalar_field(res, soi, label, step=None, figsize=(6, 6), locators=False, gr
     cbar = figure.colorbar(plot, extend='neither' if limits is not None else 'both')
     cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
     cbar.ax.tick_params(labelsize=12)
-    # Dashed, labelled contours at the levels
+    # Dashed contours at the levels, labelled unless asked otherwise
     if contours:
         lines = ax.contour(x, y, soi, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
-        _label_contours(ax, lines)
+        if contour_labels:
+            _label_contours(ax, lines)
     return figure, ax
 
 
 # --------------------------------------------------------------------- figures
 
-def plot_displacement(res, displacement, option, step=None):
+def plot_displacement(res, displacement, option, step=None, **options):
     """
     Displacement figure (formerly model.plot_displacement).
 
@@ -148,8 +229,13 @@ def plot_displacement(res, displacement, option, step=None):
     displacement: 'ux', 'uy' or 'uxy' (in-plane vector; colour = its magnitude),
     option: 'vectors' or 'contours',
     step: contour step, in m (also used when option is 'vectors'); None (the
-    default since Nov 2026) chooses a round one from the values.
+    default since Nov 2026) chooses a round one from the values,
+    options: drawing options (STYLE_DEFAULTS): cmap, limits, center_zero,
+    contours, contour_labels, info_box, arrow_scale (the last only for 'vectors';
+    contours and contour_labels only for 'contours').
     """
+    style = _style(options, SCALAR_OPTIONS + ('info_box', 'arrow_scale'))
+    cmap = style['cmap'] or 'viridis'
     _require(res, 'ux', 'uy')
     upper_tip, lower_tip = _crack_tips(res)
     crack = res.metadata['crack']
@@ -174,50 +260,62 @@ def plot_displacement(res, displacement, option, step=None):
     if option == 'vectors':
         # The arrows are scaled with the largest magnitude of the plotted vector
         # (|ux|, |uy| or |u|, depending on the selected displacement)
-        plot = ax.quiver(x, y, dp, ds, dt, width=0.0050, scale=np.nanmax(np.hypot(dp, ds))/0.1, cmap='viridis')
+        # (arrow_scale > 1 draws longer arrows: the quiver scale is divided by it)
+        plot = ax.quiver(x, y, dp, ds, dt, width=0.0050, scale=np.nanmax(np.hypot(dp, ds))/0.1/style['arrow_scale'],
+                         cmap=cmap)
+        # Colour limits only if asked (otherwise matplotlib's own, as before)
+        if style['limits'] is not None or style['center_zero']:
+            plot.set_clim(*_colour_limits(np.nanmin(dt), np.nanmax(dt), style['limits'], style['center_zero']))
         cbar = figure.colorbar(plot, extend='both')
         cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
         cbar.ax.tick_params(labelsize=12)
     elif option == 'contours':
         # Colour map and labelled contours of dt
-        plot = ax.pcolormesh(x, y, dt, cmap='viridis', vmin=plot_params[0], vmax=plot_params[1], shading='nearest')
+        vmin, vmax = _colour_limits(plot_params[0], plot_params[1], style['limits'], style['center_zero'])
+        plot = ax.pcolormesh(x, y, dt, cmap=cmap, vmin=vmin, vmax=vmax, shading='nearest')
         cbar = figure.colorbar(plot, extend='both')
         cbar.set_label(label, rotation=270, labelpad=20, fontsize=15)
         cbar.ax.tick_params(labelsize=12)
-        contours = ax.contour(x, y, dt, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
-        _label_contours(ax, contours)
+        if style['contours']:
+            contours = ax.contour(x, y, dt, levels=plot_params[-1], colors='black', linewidths=0.75, linestyles='--')
+            if style['contour_labels']:
+                _label_contours(ax, contours)
     else:
         raise PlotError('Invalid option. Input "vectors" or "contours" instead.')
 
     # Box with the driving stresses of the crack, anchored at its bottom inside the axes
-    # (Nov 2026; it was anchored at its top and ran over the x axis)
-    ax.text(0.97, 0.03, r'$\sigma_I$ = ' + str(round(crack['dpx']/1E6, 2))
-            + ' MPa\n' + r'$\sigma_{II}$ = ' + str(round(crack['dpy']/1E6, 2)) + ' MPa',
-            bbox=dict(fc='white', ec='black'),
-            horizontalalignment='right', verticalalignment='bottom',
-            transform=ax.transAxes, fontsize=11, zorder=5)
+    # (Nov 2026; it was anchored at its top and ran over the x axis); optional since Phase 4
+    if style['info_box']:
+        ax.text(0.97, 0.03, r'$\sigma_I$ = ' + str(round(crack['dpx']/1E6, 2))
+                + ' MPa\n' + r'$\sigma_{II}$ = ' + str(round(crack['dpy']/1E6, 2)) + ' MPa',
+                bbox=dict(fc='white', ec='black'),
+                horizontalalignment='right', verticalalignment='bottom',
+                transform=ax.transAxes, fontsize=11, zorder=5)
     return figure
 
 
-def plot_stresses(res, stress, step=None):
+def plot_stresses(res, stress, step=None, **options):
     """
     Stress component figure, in MPa (formerly model.plot_stresses).
 
     stress: 'sxa', 'sya', 'sav', 'sxya', 'sxza', 'sza', 'ta' (the former keys)
     or the field names 'sxx', 'syy', 'sav', 'sxy', 'sxz', 'szz', 'tmax',
     step: contour step, in MPa; None (the default since Nov 2026) chooses a
-    round one from the values.
+    round one from the values,
+    options: drawing options (STYLE_DEFAULTS): cmap, limits, center_zero,
+    contours, contour_labels.
     """
+    style = _style(options, SCALAR_OPTIONS)
     if stress not in STRESS_KEYS:
         raise PlotError('Invalid stress "' + str(stress) + '". Input one of ' + ', '.join(sorted(STRESS_KEYS)))
     field, label = STRESS_KEYS[stress]
     _require(res, field)
     # Drawn in MPa
-    figure, ax = _scalar_field(res, res[field]/1e6, label, step, grid_lines=True)
+    figure, ax = _scalar_field(res, res[field]/1e6, label, step, grid_lines=True, **style)
     return figure
 
 
-def plot_principal_stresses(res, stress, step=None):
+def plot_principal_stresses(res, stress, step=None, **options):
     """
     Principal stress figure (formerly model.plot_principal_stresses).
 
@@ -230,7 +328,13 @@ def plot_principal_stresses(res, stress, step=None):
     degrees) and without contours, since -90 and +90 degrees are the same
     orientation (Nov 2026; until then a linear scale made vertical sigma1
     look both dark and bright, with a false jump between them).
+
+    options: drawing options (STYLE_DEFAULTS): cmap, limits, center_zero,
+    contours, contour_labels. For 'angle' only cmap is used (twilight by
+    default; it should be a cyclic map): the limits stay at -90 and 90 degrees,
+    without contours.
     """
+    style = _style(options, SCALAR_OPTIONS)
     _require(res, 's1', 's3', 's1a')
     # The field to draw (soi, 'stress of interest') and its colour-bar label
     if stress == 'principal':
@@ -239,21 +343,25 @@ def plot_principal_stresses(res, stress, step=None):
         soi = res.s3/1e6 ; label = r'$\sigma_3$ (MPa)'
     elif stress == 'angle':
         soi = res.s1a ; label = r'$\sigma_1$ angle from +x (°)'
-        figure, ax = _scalar_field(res, soi, label, locators=True, cmap='twilight', limits=(-90, 90),
-                                   contours=False)
+        figure, ax = _scalar_field(res, soi, label, locators=True, cmap=style['cmap'] or 'twilight',
+                                   limits=(-90, 90), contours=False)
         return figure
     else:
         raise PlotError('Invalid stress. Input "principal", "secondary" or "angle" instead.')
-    figure, ax = _scalar_field(res, soi, label, step, locators=True)
+    figure, ax = _scalar_field(res, soi, label, step, locators=True, **style)
     return figure
 
 
-def plot_stress_trajectories(res, planes):
+def plot_stress_trajectories(res, planes, **options):
     """
     Orientations of sigma1 and sigma3 and, if planes is True, of the two
     conjugate optimal shear planes (formerly model.plot_stress_trajectories).
     Orientations are drawn as (cos a, sin a), counterclockwise from +x.
+
+    options: arrow_scale, the length of the segments relative to the default
+    (0.9 times the grid spacing).
     """
+    style = _style(options, ('arrow_scale',))
     if not isinstance(planes, bool):
         raise PlotError('planes must be a bool (True or False), not ' + repr(planes))
     _require(res, 's1', 's3', 's1a', 's3a', 'coula')
@@ -273,7 +381,7 @@ def plot_stress_trajectories(res, planes):
     # of the grid and their width 0.08 times (Nov 2026; until then a fixed 111 m and
     # 10 m, too short on coarse grids and overlapping on fine ones)
     cell = _cell_size(res)
-    seg = dict(headlength=0, headaxislength=0, pivot='middle', scale=1/(0.9*cell), units='xy',
+    seg = dict(headlength=0, headaxislength=0, pivot='middle', scale=1/(0.9*cell*style['arrow_scale']), units='xy',
                width=0.08*cell, headwidth=1)
     plot1 = ax.quiver(x, y, np.cos(p_angles), np.sin(p_angles), p, cmap='copper_r', **seg)
     plot2 = ax.quiver(x, y, np.cos(s_angles), np.sin(s_angles), s, cmap='cool', **seg)
@@ -296,13 +404,18 @@ def plot_stress_trajectories(res, planes):
     return figure
 
 
-def plot_plane_stresses(res, stress, angle, step=None):
+def plot_plane_stresses(res, stress, angle, step=None, **options):
     """
     Normal ('normal') or shear ('shear') stress on the optimal shear planes,
     in MPa (formerly model.plot_plane_stresses). angle is only written in the
     label box; step is the contour step in MPa, or None (the default since
     Nov 2026) for a round one chosen from the values.
+
+    options: drawing options (STYLE_DEFAULTS): cmap, limits, center_zero,
+    contours, contour_labels, info_box.
     """
+    style = _style(options, SCALAR_OPTIONS + ('info_box',))
+    info_box = style.pop('info_box')
     _require(res, 'sn', 'ss')
     meta = res.metadata ; crack = meta['crack']
     # The field to draw, in MPa, and its label
@@ -312,13 +425,14 @@ def plot_plane_stresses(res, stress, angle, step=None):
         soi = res.ss/1e6 ; label = r'$\sigma_s$ (MPa)'
     else:
         raise PlotError('Invalid stress. Input "normal" or "shear" instead.')
-    figure, ax = _scalar_field(res, soi, label, step, locators=True)
+    figure, ax = _scalar_field(res, soi, label, step, locators=True, **style)
 
     # Box with the driving stresses and the material: single values for one layer,
     # the list of values of every layer otherwise. Anchored at its bottom inside the
-    # axes (Nov 2026; it was anchored at its top and ran over the x axis)
+    # axes (Nov 2026; it was anchored at its top and ran over the x axis). Optional
+    # since Phase 4 (info_box)
     dpx, dpy = crack['dpx'], crack['dpy']
-    if meta['n_layers'] == 1:
+    if info_box and meta['n_layers'] == 1:
         ax.text(0.97, 0.03, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa ; ' + r'$\sigma_{II}$ = '
                 + str(round(dpy/1E6, 2)) + ' MPa\n'
                 + r'$\alpha$ = ' + str(angle) + '° ; ' + r'$\rho$ = ' + str(np.float64(meta['layers_d'][0])) + ' kg m$^3$'
@@ -328,7 +442,7 @@ def plot_plane_stresses(res, stress, angle, step=None):
                 bbox=dict(fc='white', ec='black'),
                 horizontalalignment='right', verticalalignment='bottom',
                 transform=ax.transAxes, fontsize=11, zorder=5)
-    else:
+    elif info_box:
         ax.text(0.98, 0.03, r'$\sigma_I$ = ' + str(round(dpx/1E6, 2)) + ' MPa\n' + r'$\sigma_{II}$ = '
                 + str(round(dpy/1E6, 2)) + ' MPa\n'
                 + r'$\alpha$ = ' + str(angle) + '°'
@@ -338,6 +452,80 @@ def plot_plane_stresses(res, stress, angle, step=None):
                 bbox=dict(fc='white', ec='black'),
                 horizontalalignment='right', verticalalignment='bottom',
                 transform=ax.transAxes, fontsize=11, zorder=5)
+    return figure
+
+
+def plot_failure_modes(res, legend=True):
+    """
+    Map of the failure state of each node, one colour per state (Phase 4, Nov 2026;
+    the map of tests/failure_check.py, asked by Sam as a figure of its own): below
+    failure (light grey), above it (red), Mode I (blue), mixed-mode I-II
+    (dodgerblue), Mode II tension-compression (purple), Mode II compression
+    (orange) and singular nodes (black).
+
+    res: DiESResults with failure_mode: compute_failure_state(model results) for a
+    single model, or one step of a dynamic model.
+    legend: list the states found, with their number of nodes, beside the map.
+    """
+    _require(res, 'failure_mode')
+    upper_tip, lower_tip = _crack_tips(res)
+    modes = np.asarray(res['failure_mode']).astype(str)
+    # Code of each node: its index in FAILURE_MODES (an unknown label counts as singular)
+    index = {mode: i for i, mode in enumerate(FAILURE_MODES)}
+    code = np.vectorize(lambda m: index.get(m, len(FAILURE_MODES) - 1), otypes=[int])(modes)
+
+    # Wider with the legend, so that the map keeps the size of the other figures
+    figure, ax = _axes(res, (8.6, 6) if legend else (6, 6), True)
+    _set_locators(ax, res)
+    ax.pcolormesh(res.x, res.y, code, cmap=ListedColormap(FAILURE_MODE_COLORS),
+                  norm=BoundaryNorm(np.arange(len(FAILURE_MODES) + 1) - 0.5, len(FAILURE_MODES)), shading='nearest')
+    # The crack in black (red is the colour of the nodes above failure)
+    ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='black', lw=3)
+    if legend:
+        # Only the states present, with their number of nodes, outside the map on the right
+        handles, labels = [], []
+        for i, (mode, colour) in enumerate(zip(FAILURE_MODES, FAILURE_MODE_COLORS)):
+            count = int(np.sum(code == i))
+            if count:
+                handles.append(plt.Rectangle((0, 0), 1, 1, fc=colour, ec='0.5'))
+                labels.append('%s (%d)' % (mode, count))
+        ax.legend(handles, labels, fontsize=9, loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0,
+                  title='Nodes', title_fontsize=9)
+    return figure
+
+
+def plot_failure_ratio(res, **options):
+    """
+    Map of r/r_c, how close each node is to failure (Phase 4, Nov 2026): the radius
+    of its Mohr circle over the critical radius, the distance from the centre of the
+    circle to the Griffith-Coulomb envelope (docs/failure_criterion.md). 1 means
+    touching the envelope; the black lines are the edges of the failure band,
+    1 -/+ FAILURE_TOLERANCE.
+
+    res: DiESResults with failure_ratio (compute_failure_state).
+    options: cmap (RdBu_r by default, white at 1 with the default limits), limits
+    ((0, 2) by default; larger values take the top colour), contours (the edges of
+    the failure band).
+    """
+    style = _style(options, ('cmap', 'limits', 'contours'))
+    _require(res, 'failure_ratio')
+    upper_tip, lower_tip = _crack_tips(res)
+    ratio = np.asarray(res['failure_ratio'], dtype=float)
+    vmin, vmax = style['limits'] if style['limits'] is not None else (0.0, 2.0)
+
+    figure, ax = _axes(res, (6, 6), True)
+    _set_locators(ax, res)
+    plot = ax.pcolormesh(res.x, res.y, ratio, cmap=style['cmap'] or 'RdBu_r', vmin=vmin, vmax=vmax, shading='nearest')
+    cbar = figure.colorbar(plot, extend='max')
+    cbar.set_label(r'r / r$_c$', rotation=270, labelpad=20, fontsize=15)
+    cbar.ax.tick_params(labelsize=12)
+    if style['contours']:
+        # Edges of the failure band (the tolerance is kept in the metadata by compute_failure_state)
+        tolerance = res.metadata.get('failure_tolerance', 0.035)
+        finite = np.where(np.isfinite(ratio), ratio, np.nan)
+        if np.nanmin(finite) < 1 + tolerance and np.nanmax(finite) > 1 - tolerance:
+            ax.contour(res.x, res.y, finite, levels=[1 - tolerance, 1 + tolerance], colors='black', linewidths=0.8)
+    ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='black', lw=3)
     return figure
 
 

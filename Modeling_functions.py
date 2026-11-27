@@ -504,6 +504,51 @@ def compute_dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,inves
                                   'failure_criterion':'analytical', 'failure_tolerance':FAILURE_TOLERANCE})
 
 
+def compute_failure_state(res):
+    """
+    Failure state of a single model: how close each node is to the Griffith-Coulomb
+    envelope, with the crack loaded at once (Phase 4, Nov 2026; asked by Sam as one more
+    output of the single model). It only reads the results of model.compute(), so it
+    changes nothing else.
+
+    Unlike compute_dynamic_model, there are no steps: a node beyond the failure band is
+    'Above' (no first failure is followed), and the contact mode of every node is kept
+    in failure_contact_mode, whatever its ratio.
+
+    Parameters
+    ----------
+    res : DiESResults from model.compute(), with s1, s3, friction and T
+
+    Returns
+    -------
+    DiESResults with, at each node:
+        failure_ratio : r/r_c, the radius of the Mohr circle over the critical radius
+                        (1 = touching the envelope; within 1 +/- FAILURE_TOLERANCE, at failure)
+        failure_mode : 'Below', 'Above', a failure mode or 'Singular' (evaluate_stress_states)
+        failure_contact_mode : the mode of the point where the circle would touch the envelope
+        failure_sn, failure_ss (MPa), failure_theta (deg) : on the failure plane, where at failure
+    and the metadata of res.
+    """
+    for name in ('s1', 's3', 'friction', 'T'):
+        if name not in res:
+            raise InputError('compute_failure_state needs the field ' + name + ' (results of model.compute)')
+    s1, s3 = res['s1'], res['s3']
+    # Classification of every node (the same criterion and band as the dynamic model)
+    sn, ss, two_theta, mode = evaluate_stress_states(s1, s3, res['friction'], res['T'])
+    # r/r_c and the contact mode, for every node (also those below or above failure)
+    with np.errstate(invalid='ignore'):
+        ratio, _, _, _, contact_mode = failure_contact(s1, s3, res['friction'], res['T'])
+    # Singular nodes (crack tips) have no ratio
+    finite = np.isfinite(s1) & np.isfinite(s3)
+    ratio = np.where(finite, ratio, np.nan)
+    contact_mode = np.where(finite, contact_mode, 'Singular')
+    fields = {'failure_ratio': ratio, 'failure_mode': mode, 'failure_contact_mode': contact_mode,
+              'failure_sn': sn, 'failure_ss': ss, 'failure_theta': two_theta/2}
+    metadata = dict(res.metadata)
+    metadata['failure_tolerance'] = FAILURE_TOLERANCE
+    return DiESResults(res.x, res.y, fields, metadata)
+
+
 def dynamic_model(crack_inputs,model_inputs,dx,dy,dz,rx,ry,g,litho,investigation_range,xlims,ylims,resolution,downscaling,plotting,folder,
                   layer_tops=None):
     """

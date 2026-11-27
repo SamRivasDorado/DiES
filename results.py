@@ -74,6 +74,9 @@ FIELD_INFO = {
     'failure_mode': ('', "failure mode: 'Below', 'Above', 'Mode I', 'Mixed-mode I-II', "
                          "'Mode II - tension-compression', 'Mode II - compression' or 'Singular'"),
     'above_failure': ('', '0 where the node is above failure, NaN elsewhere (as drawn in red)'),
+    # Failure state of a single model (Modeling_functions.compute_failure_state, Phase 4)
+    'failure_ratio': ('', 'radius of the Mohr circle over the critical radius r/r_c (1: touching the envelope)'),
+    'failure_contact_mode': ('', 'mode of the point where the Mohr circle would touch the envelope'),
     'failure_jumped': ('', '1 where the node jumped from below to above failure in one step and its failure '
                            'values are those of the contact with the envelope; 0 elsewhere'),
     'plane_mixed_left': ('rad', 'orientation of mixed-mode I-II planes, left of the crack, counterclockwise from +x'),
