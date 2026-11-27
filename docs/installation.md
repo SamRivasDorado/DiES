@@ -59,13 +59,48 @@ Optional extras:
 `pip install -e .[test]` (pytest), `pip install -e .[xarray]` (for `DiESResults.to_xarray()`) and
 `pip install -e .[app]` (Streamlit, for the app).
 
+A normal installation (`pip install .`, without `-e`) copies the modules and works the same,
+but then changes to the repository need a new installation.
+
 ## 3. The app
 
 With the `app` extra installed, `dies-app` opens the DiES app in the browser (without installing,
 from the repository folder: `streamlit run dies/app/streamlit_app.py`). See `docs/app.md`.
 
-A normal installation (`pip install .`, without `-e`) copies the modules and works the same,
-but then changes to the repository need a new installation.
+### Step by step on Windows
+
+Without Anaconda and without git (Python from python.org, or the one Spyder uses):
+
+1. **Download the code.** On GitHub, the green *Code* button → *Download ZIP*, or the ZIP of a
+   branch: `https://github.com/SamRivasDorado/DiES/archive/refs/heads/<branch>.zip`. Unzip it in
+   a local folder, **not in a synchronised one** (iCloud Drive, OneDrive, Dropbox): the virtual
+   environment holds thousands of files, and the synchronisation can lock them and break the
+   installation.
+2. **Open a terminal in that folder**: right click on the folder → *Open in Terminal* (PowerShell),
+   or type `cmd` in the address bar of the File Explorer.
+3. **Find your Python.** If `py --version` or `python --version` gives an error, or `python` opens
+   the Microsoft Store, Python is not on the PATH: use its full path. One way to find it: in the
+   console of Spyder, `import sys; print(sys.executable)`. Write that full path in quotes, with
+   `&` before it in PowerShell (without it in `cmd`), e.g.:
+   ```
+   & "C:\Users\<you>\AppData\Local\Programs\Python\Python312\python.exe" -m venv .venv
+   ```
+   This creates a virtual environment in the folder (`.venv`), apart from your other packages.
+4. **Install DiES and the app** into that environment (one or two minutes):
+   ```
+   .venv\Scripts\python.exe -m pip install -e ".[app]"
+   ```
+5. **Open the app**:
+   ```
+   .venv\Scripts\python.exe -m dies.app.launcher
+   ```
+   A tab opens in the browser (`http://localhost:8501`); the app runs on your computer. To close
+   it, press Ctrl + C in the terminal. Next time, only step 5 is needed (in a terminal open in the
+   folder).
+
+With a newer ZIP of the same branch, copy its files over the folder (keeping `.venv`); there is
+nothing to install again unless `pyproject.toml` changed. Calling `.venv\Scripts\python.exe`
+directly avoids activating the environment, which PowerShell may refuse to do.
 
 ## Notes
 

@@ -117,3 +117,43 @@ def test_launcher_and_back_to_the_example():
     app.button[[b.label for b in app.button].index('Back to the example')].click().run()
     assert app.session_state['version'] == version + 1
     assert app.session_state[_key(app, 'gravity')] == 9.81
+
+
+def test_views_of_the_single_model():
+    """After Run, every figure of every view is shown without errors, with drawing options too;
+    the probe table and the profile are there; the plane angle (a label) does not make the
+    results old."""
+    from dies.app import views
+    app = _start()
+    app.button(key='run_static').click().run()
+    assert not app.exception
+    for view, items in views.VIEWS.items():
+        for item in items:
+            app.selectbox(key=view + '.figure').set_value(item.key).run()
+            assert not app.exception, (view, item.key)
+    # Drawing options on a stress map
+    app.selectbox(key='Stresses.cmap').set_value('RdBu_r').run()
+    app.checkbox(key='Stresses.center_zero').check().run()
+    app.checkbox(key='Stresses.contour_labels').uncheck().run()
+    assert not app.exception
+    # Probe tables (one per view) and the profile CSV buttons
+    assert len(app.dataframe) >= len(views.VIEWS)
+    app.number_input(key='Stresses.probe_x').set_value(1000.0).run()
+    assert not app.exception
+    # The plane angle only changes a label
+    app.number_input(key=_key(app, 'plane_angle')).set_value(45.0).run()
+    assert not any('The inputs have changed' in w.value for w in app.warning)
+
+
+def test_export_view():
+    """Export: the ZIP is prepared when asked, offered for download, and marked as old when the
+    choices change."""
+    app = _start()
+    app.button(key='run_static').click().run()
+    app.multiselect(key='export.figures').set_value(['s1']).run()
+    app.button(key='export.prepare').click().run()
+    assert not app.exception
+    request, data, files = app.session_state['export.zip']
+    assert files == ['scenario.yaml', 'static_results.npz', 'static_results.csv', 's1.png']
+    app.multiselect(key='export.figures').set_value(['s1', 's3']).run()
+    assert any('prepare the ZIP again' in c.value for c in app.caption)

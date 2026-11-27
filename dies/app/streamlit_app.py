@@ -68,7 +68,7 @@ with st.container(border=True, key='models'):
     single_tab, dynamic_tab = st.tabs(['Single model', 'Dynamic model'])
     with single_tab:
         single_model.render(static_scenario, static_problems,
-                            state.scenario_key(static_scenario) if static_scenario else None)
+                            state.scenario_key(static_scenario) if static_scenario else None, form)
     with dynamic_tab:
         dynamic_model.render(dynamic_scenario, dynamic_only,
                              state.scenario_key(dynamic_scenario) if dynamic_scenario else None)

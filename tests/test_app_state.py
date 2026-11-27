@@ -9,6 +9,7 @@ import os
 import sys
 import warnings
 
+import numpy as np
 import pytest
 import yaml
 
@@ -219,3 +220,109 @@ def test_app_figures_render():
     assert b'<svg' in figures.render(lambda: figures.plot_crack(scenario), 'svg')
     import matplotlib.pyplot as plt
     assert plt.get_fignums() == []               # every figure is closed
+
+
+# ----------------------------------------------------------------- views (Phase 4, step 2)
+
+@pytest.fixture(scope='module')
+def dike_run():
+    raw = _without_output(_read(DIKE))
+    raw['analysis'] = {'type': 'static'}
+    return dies.Scenario.from_dict(raw).run()
+
+
+def test_every_figure_of_every_view_is_drawn(dike_run):
+    """Each figure of dies.app.views draws with its default options and with every option it takes,
+    and the profile has its fields."""
+    from dies.app import views
+    import matplotlib.pyplot as plt
+    changed = {'cmap': 'cividis', 'limits': (-1.0, 1.0), 'center_zero': True, 'contours': False,
+               'contour_labels': False, 'info_box': False, 'arrow_scale': 2.0, 'step': 0.5}
+    for view, items in views.VIEWS.items():
+        for item in items:
+            res = item.results(dike_run)
+            for options in ({}, changed):
+                style, step = views.style_for(item, options)
+                assert set(style) <= set(item.options)
+                figure = item.draw(res, dike_run, style, step, {'plane_angle': 45.0})
+                plt.close(figure)
+            data = views.profile(dike_run, item, (-4000, -500), (4000, -500), n=50)
+            assert len(data) == 3 + len(item.profile) and all(len(v) == 50 for v in data.values())
+
+
+def test_style_for_leaves_out_the_defaults(dike_run):
+    """Options at their default are not passed, so that the app draws exactly what the scripts draw."""
+    from dies.app import views
+    item = views.figure('Stresses', 'sxx')
+    assert views.style_for(item, {'cmap': None, 'contours': True, 'step': None}) == ({}, None)
+    assert views.style_for(item, {'cmap': 'RdBu_r', 'info_box': False, 'step': 2}) == ({'cmap': 'RdBu_r'}, 2)
+    angle = views.figure('Principal & trajectories', 'angle')
+    assert views.style_for(angle, {'cmap': 'hsv', 'center_zero': True, 'step': 5}) == ({'cmap': 'hsv'}, None)
+
+
+def test_probe_profile_and_plane_angle(dike_run):
+    """The probe gives the values of the nearest node in plotting units; the default profile runs
+    along the top row of nodes; the default plane angle is the optimal one."""
+    from dies.app import views
+    x, y, rows = views.probe(dike_run, 480, -1030)
+    expected = dike_run.static.probe(480, -1030)
+    assert (x, y) == (expected['x'], expected['y'])
+    values = dict(rows)
+    assert values['σxx (MPa)'] == pytest.approx(expected['sxx']/1e6)
+    assert values['ux (m)'] == expected['ux']
+    assert values['Failure state'] in ('Below', 'Above', 'Mode I', 'Mixed-mode I-II',
+                                       'Mode II - tension-compression', 'Mode II - compression')
+    A, B = views.default_profile(dike_run.static)
+    assert A[1] == B[1] == dike_run.static.y_nodes().max()
+    assert (A[0], B[0]) == (dike_run.static.x_nodes().min(), dike_run.static.x_nodes().max())
+    data = views.profile(dike_run, views.figure('Displacements', 'uy_contours'), A, B)
+    # Surface profile above a vertical dike: uy is symmetric about x = 0
+    np.testing.assert_allclose(data['uy (m)'], data['uy (m)'][::-1], atol=1e-12)
+    assert views.optimal_plane_angle(dike_run) == 59.84
+
+
+def test_overlays_and_profile_plot(dike_run):
+    import matplotlib.pyplot as plt
+    import plotting
+    fig = figures.add_overlays(plotting.plot_stresses(dike_run.static, 'sxx'), (0, -500), ((-4000, -100), (4000, -100)))
+    assert [t.get_text() for t in fig.axes[0].texts if t.get_text() in 'AB'] == ['A', 'B']
+    plt.close(fig)
+    from dies.app import views
+    data = views.profile(dike_run, views.figure('Displacements', 'uxy'), (-4000, -100), (4000, -100), n=20)
+    fig = figures.plot_profile(data)
+    assert len(fig.axes) == 2
+    plt.close(fig)
+
+
+def test_plane_angle_is_not_in_the_key():
+    """The plane angle is only a label: changing it does not make the results old."""
+    raw = _without_output(_read(DIKE))
+    other = copy.deepcopy(raw)
+    other['analysis']['plane_angle'] = '45 deg'
+    assert state.scenario_key(dies.Scenario.from_dict(raw)) == state.scenario_key(dies.Scenario.from_dict(other))
+
+
+def test_export_zip(dike_run):
+    """The ZIP holds what `dies run` writes for the choices, from the results of the run (not computed
+    again): the scenario as YAML (static, with the label angle given), the results and the figures."""
+    import io
+    import zipfile
+    from dies.app import export
+    from results import DiESResults
+    data, files = export.export_zip(dike_run, 45, ('npz',), ['sxx', 'failure_mode'], 'svg')
+    assert files == ['scenario.yaml', 'static_results.npz', 'sxx.svg', 'failure_mode.svg']
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    folder = export.folder_name(dike_run.scenario.name)
+    assert archive.namelist() == [folder + '/' + name for name in files]
+    scenario = state.read_scenario_text(archive.read(folder + '/scenario.yaml').decode('utf-8'), 'scenario.yaml')
+    assert scenario['analysis'] == {'type': 'static', 'plane_angle': '45 deg'}
+    assert scenario['output']['figures']['static'] == ['sxx', 'failure_mode']
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'r.npz')
+        with open(path, 'wb') as f:
+            f.write(archive.read(folder + '/static_results.npz'))
+        np.testing.assert_array_equal(DiESResults.load(path)['sxx'], dike_run.static['sxx'])
+    with pytest.raises(ValueError, match='unknown figure'):
+        export.export_zip(dike_run, figures=['not_a_figure'])
+    assert export.folder_name('Vertical dike, opening only') == 'Vertical_dike_opening_only_results'

@@ -363,12 +363,15 @@ def describe_problem(problem):
 def scenario_key(scenario):
     """
     The key of a computation: the checked scenario in the units of the core, as sorted
-    JSON, without the name, the description and the output section, which do not change
-    the results. '5 km' and '5000 m' give the same key.
+    JSON, without the name, the description, the output section and the plane angle (a
+    label), which do not change the results. '5 km' and '5000 m' give the same key.
     """
     data = scenario.to_dict()
     for key in ('name', 'description', 'output'):
         data.pop(key, None)
+    # The plane angle is only a label of the plane figures (Phase 4, step 2)
+    if isinstance(data.get('analysis'), dict):
+        data['analysis'].pop('plane_angle', None)
     return json.dumps(data, sort_keys=True)
 
 

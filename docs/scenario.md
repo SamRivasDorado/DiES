@@ -137,9 +137,15 @@ Static figures (drawn with `plotting.py` from the results, without recomputing):
 | `trajectories`, `trajectories_planes` | Orientations of σ1 and σ3, without and with the optimal shear planes (coarser grid). |
 | `plane_normal`, `plane_shear` | Normal and shear stress on the optimal shear planes. |
 | `crack_displacements` | Profile of the crack walls (opening and slip). |
+| `failure_mode` | Failure state of each node with the crack loaded at once: below or above failure, or the failure mode (Phase 4). |
+| `failure_ratio` | How close each node is to failure: r/r_c, the radius of its Mohr circle over the critical radius, with the edges of the failure band (Phase 4). |
 
 As in `single_model`, the vector and trajectory figures use a grid 2.5 times coarser along x and 3
-times along y than `grid.cell`, so that the arrows can be read (`ScenarioResults.coarse()`).
+times along y than `grid.cell`, so that the arrows can be read (`ScenarioResults.coarse()`). The
+failure-state figures use `ScenarioResults.failure()`, the result of
+`Modeling_functions.compute_failure_state` on the static results (computed once): unlike the
+dynamic analysis, there are no steps, so a node beyond the failure band is `Above` and no first
+failure is followed.
 
 ### Files written by `run.write(folder)`
 

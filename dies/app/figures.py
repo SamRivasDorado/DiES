@@ -5,6 +5,8 @@ rendering of any figure to image bytes. No Streamlit here.
 - plot_model(scenario): sketch of the model before computing it: the grid, the layers
   with their properties, the crack and the surface.
 - render(draw, fmt, dpi): draws a figure, saves it to bytes (png, pdf or svg) and closes it.
+- add_overlays(figure, probe, profile): marks the probe and the profile line on a map.
+- plot_profile(data): the line plot of a profile.
 
 pyplot keeps a global state and is not safe when several threads draw at the same time
 (Streamlit serves each session in its own thread), so every figure is drawn and saved
@@ -19,6 +21,7 @@ import matplotlib
 matplotlib.use('Agg')       # figures are only rendered to images, never shown in a window
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib import patheffects
 
 from Helper_functions import model_locators
 
@@ -128,3 +131,39 @@ def plot_crack(scenario):
     disc = scenario.build_crack(current_model)
     E, v = crack_layer_properties(current_model, disc.up_tip(), disc.low_tip())
     return plotting.plot_crack_displacements(disc, v, E)
+
+
+def add_overlays(figure, probe=None, profile=None):
+    """
+    Marks the probe and the profile on a map figure (its first axes), on top of everything:
+    probe: (x, y) of the node used, a white circle; profile: (A, B), a dashed white line
+    with its ends labelled A and B. Returns the figure.
+    """
+    ax = figure.axes[0]
+    halo = dict(path_effects=[patheffects.withStroke(linewidth=3, foreground='black')])
+    if profile is not None:
+        (xa, ya), (xb, yb) = profile
+        ax.plot((xa, xb), (ya, yb), c='white', lw=1.8, ls='--', zorder=20, **halo)
+        for (px, py), name in (((xa, ya), 'A'), ((xb, yb), 'B')):
+            ax.annotate(name, (px, py), xytext=(4, -12), textcoords='offset points', color='white',
+                        fontsize=11, fontweight='bold', zorder=21, **halo)
+    if probe is not None:
+        ax.scatter([probe[0]], [probe[1]], s=70, facecolors='white', edgecolors='black', linewidths=1.5, zorder=22)
+    return figure
+
+
+def plot_profile(data, distance_label='distance (m)'):
+    """
+    Line plot of a profile (dies.app.views.profile): one panel per field, against the
+    distance from A. Returns the figure.
+    """
+    fields = [label for label in data if label not in (distance_label, 'x (m)', 'y (m)')]
+    figure, axes = plt.subplots(len(fields), 1, figsize=(5, 1.9*len(fields) + 0.8), sharex=True, squeeze=False,
+                                tight_layout=True)
+    for ax, label in zip(axes[:, 0], fields):
+        ax.plot(data[distance_label], data[label], c='#1F5FAD', lw=1.8)
+        ax.set_ylabel(label, fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.tick_params(labelsize=8)
+    axes[-1, 0].set_xlabel('Distance from A (m)', fontsize=9)
+    return figure

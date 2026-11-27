@@ -31,6 +31,7 @@ SCALAR_FIELDS = [
     'grid.x_min', 'grid.x_max', 'grid.y_base', 'grid.y_top', 'grid.cell_x', 'grid.cell_y',
     'gravity', 'remote_xx', 'remote_yy', 'lithostatic',
     'dynamic.increment', 'dynamic.step', 'dynamic.steps',
+    'plane_angle',
 ]
 
 
@@ -91,8 +92,8 @@ def load_example():
 def current_form(layers_rows, crack_row):
     """
     The form as it is now: the widget values (from st.session_state), the rows of the
-    two tables as edited, and what the app does not edit (name, description, output,
-    plane angle) from the scenario opened.
+    two tables as edited, and what the app does not edit (name, description, output)
+    from the scenario opened.
     """
     form = copy.deepcopy(st.session_state['form'])
     for name in SCALAR_FIELDS:

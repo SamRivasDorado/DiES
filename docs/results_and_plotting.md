@@ -79,6 +79,49 @@ instance for a displacement figure.
 - orientations, in degrees counterclockwise from +x, in (−90°, 90°]: `s1a`, `s3a`;
 - stresses on the optimal shear planes, in Pa, compression positive: `sn`, `ss`.
 
+**Drawing options** (Phase 4, Nov 2026; the plotting options of the app). The map figures take
+keyword options; their defaults give the figures of before, pixel for pixel
+(`plotting.STYLE_DEFAULTS`; an unknown or invalid option raises `PlotError`):
+
+| Option | Default | Effect | Figures |
+|---|---|---|---|
+| `cmap` | the figure's own (`viridis`; `twilight` for the angle) | any matplotlib colour map | all maps |
+| `limits` | 1st and 99th percentiles | `(vmin, vmax)` of the colours | colour maps, arrows |
+| `center_zero` | `False` | colours symmetric around 0 (ignored with `limits`); with a diverging map (`RdBu_r`, `coolwarm`), tension and compression get opposite colours and 0 is white | colour maps, arrows |
+| `contours` | `True` | draw the contours | colour maps |
+| `contour_labels` | `True` | label the contours | colour maps |
+| `info_box` | `True` | the box with the driving stresses (and the material) | displacements, `plot_plane_stresses` |
+| `arrow_scale` | `1.0` | length of the arrows and trajectory segments, relative to the default | displacement arrows, trajectories |
+
+```python
+fig = plotting.plot_stresses(res, 'sxx', cmap='RdBu_r', center_zero=True, contour_labels=False)
+fig = plotting.plot_plane_stresses(res, 'normal', 60, limits=(-5, 40), info_box=False)
+fig = plotting.plot_displacement(res, 'uxy', 'vectors', arrow_scale=2)
+```
+
+For the angle of σ1 only `cmap` is used (it should stay a cyclic map); the trajectories take only
+`arrow_scale`.
+
+**Failure state of a single model** (Phase 4, Nov 2026): how close each node is to the
+Griffith-Coulomb envelope, with the crack loaded at once (no steps).
+
+```python
+from Modeling_functions import compute_failure_state     # also dies.compute_failure_state
+
+state = compute_failure_state(res)          # a DiESResults
+state['failure_ratio']        # r/r_c: radius of the Mohr circle over the critical radius (1: touching)
+state['failure_mode']         # 'Below', 'Above', a failure mode or 'Singular' (evaluate_stress_states)
+state['failure_contact_mode'] # the mode where the circle would touch the envelope, at every node
+state['failure_sn'], state['failure_ss'], state['failure_theta']   # on the failure plane, where at failure
+
+fig = plotting.plot_failure_modes(state)    # one colour per state, with the number of nodes of each
+fig = plotting.plot_failure_ratio(state)    # r/r_c, white at 1, with the edges of the failure band
+```
+
+`plot_failure_modes` also draws the `failure_mode` of a step of a dynamic model. Its colours are
+those of `tests/failure_check.py`: below failure light grey, above it red, Mode I blue, mixed-mode
+I-II dodgerblue, Mode II tension-compression purple, Mode II compression orange, singular black.
+
 ## Dynamic model
 
 ```python
