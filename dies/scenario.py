@@ -10,6 +10,8 @@ functions of the core, which are not modified:
     run = scenario.run()          # ScenarioResults: run.static (DiESResults), run.dynamic
     run.write('results/')         # results, figures and a copy of the scenario
 
+or, from a terminal, `dies run examples/dike_example.yaml --out results/` (dies/cli.py).
+
 Format (full description in docs/scenario.md; example in examples/dike_example.yaml):
 
 - Every quantity with dimensions carries its unit ('30 GPa', '-1.5 MPa', '5 km',
@@ -103,7 +105,10 @@ def parse_quantity(value, kind, where='value'):
             raise ScenarioError(where + ': ' + repr(value) + ' has no unit; write it with its unit, e.g. ' + example)
         raise ScenarioError(where + ': expected a ' + kind + ' with its unit, e.g. ' + example + ', got ' + repr(value))
     match = _QUANTITY.match(value)
-    if match is None or not match.group(2):
+    if match is not None and not match.group(2):
+        # A number written as text (YAML reads '30e9' as text): the unit is missing too
+        raise ScenarioError(where + ": '" + value + "' has no unit; write it with its unit, e.g. " + example)
+    if match is None:
         raise ScenarioError(where + ": '" + value + "' is not a number followed by its unit, e.g. " + example)
     number, unit = float(match.group(1)), match.group(2)
     if unit not in accepted:

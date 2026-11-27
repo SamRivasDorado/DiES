@@ -36,16 +36,26 @@ dyn = dies.compute_dynamic_model(...)
 ```
 
 `dies` re-exports the core without copying it: `dies.model` is `DiES_core.model`,
-`dies.plotting` is `plotting`, and so on (`dies/__init__.py` lists what it exports). Its only
-module of its own is `dies/scenario.py`, which reads a complete model from a YAML or JSON file
-(see `docs/scenario.md`):
+`dies.plotting` is `plotting`, and so on (`dies/__init__.py` lists what it exports). Its own
+modules are `dies/scenario.py`, which reads a complete model from a YAML or JSON file (see
+`docs/scenario.md`), and `dies/cli.py`, the command line:
 
 ```python
 scenario = dies.load_scenario('examples/dike_example.yaml')
 run = scenario.run()
 run.write('results/')
 ```
- Optional extras:
+
+The installation also adds the `dies` command, which does the same from a terminal:
+
+```
+dies check examples/dike_example.yaml              # check the scenario and summarise it
+dies run examples/dike_example.yaml --out results/ # compute it and write its output
+```
+
+Without installing, the same command works from the repository folder as `python -m dies ...`.
+
+Optional extras:
 `pip install -e .[test]` (pytest) and `pip install -e .[xarray]` (for `DiESResults.to_xarray()`).
 
 A normal installation (`pip install .`, without `-e`) copies the modules and works the same,

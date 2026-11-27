@@ -28,6 +28,10 @@ dependencies = [
     "pyyaml",          # scenarios in YAML (dies/scenario.py)
 ]
 
+[project.scripts]
+# The command line: dies run scenario.yaml --out results/ (dies/cli.py)
+dies = "dies.cli:main"
+
 [project.optional-dependencies]
 # pytest for the tests; xarray only for DiESResults.to_xarray()
 test = ["pytest"]

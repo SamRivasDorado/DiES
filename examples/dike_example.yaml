@@ -2,7 +2,7 @@
 # Format agreed with Sam on 26 Nov 2026; described in docs/scenario.md.
 #
 # One file describes a complete model. DiES reads it, checks it and runs it:
-#     dies run examples/dike_example.yaml --out results/      (command line: next step)
+#     dies run examples/dike_example.yaml --out results/      (command line; or python -m dies run ...)
 # or, from a script:
 #     scenario = dies.load_scenario('examples/dike_example.yaml') ; run = scenario.run()
 #     run.write('results/')

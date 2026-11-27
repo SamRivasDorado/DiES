@@ -71,7 +71,8 @@ def test_parse_quantity_converts_to_core_units():
 
 @pytest.mark.parametrize('value, kind, message', [
     (30e9, 'stress', 'has no unit'),                   # the mistake the units are there to catch
-    ('30', 'stress', 'not a number followed by its unit'),
+    ('30', 'stress', 'has no unit'),                   # a number as text (YAML reads '30e9' so)
+    ('30e9', 'stress', 'has no unit'),
     ('30 m', 'stress', 'a unit of length'),             # a unit of another kind
     ('30 mpa', 'stress', "unknown unit 'mpa'"),          # case sensitive
     ('five km', 'length', 'not a number'),

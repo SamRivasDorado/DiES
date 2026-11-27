@@ -1,7 +1,8 @@
 # Scenarios: a DiES model in one file
 
-_Phase 3 (Nov 2026). Code: `dies/scenario.py`. Examples: `examples/dike_example.yaml` (dynamic)
-and `examples/fault_example.yaml` (static). Tests: `tests/test_scenario.py`._
+_Phase 3 (Nov 2026). Code: `dies/scenario.py` and, for the command line, `dies/cli.py`.
+Examples: `examples/dike_example.yaml` (dynamic) and `examples/fault_example.yaml` (static).
+Tests: `tests/test_scenario.py` and `tests/test_cli.py`._
 
 A scenario describes a complete model in one YAML (or JSON) file: the grid, the gravity, the
 layers, the crack, the loading, the analysis and what to write. DiES reads it, checks it and runs
@@ -20,6 +21,28 @@ run.write('results/')       # results files, figures and a copy of the scenario
 The results are identical, bit for bit, to those of `model.compute` and
 `compute_dynamic_model` called with the same values (checked in `tests/test_scenario.py` for a
 dike, a pure-shear fault, a dilatant fault with remote stresses and mode III, and two layers).
+
+## Command line
+
+The same, from a terminal (the `dies` command is installed with `pip install -e .`; without
+installing, use `python -m dies` from the repository folder):
+
+```
+dies check examples/dike_example.yaml
+dies run examples/dike_example.yaml --out results/
+```
+
+| Command | What it does |
+|---|---|
+| `dies check <scenario>` | Reads and checks the scenario and prints a summary of the model (grid and number of nodes, layers, crack, final driving stresses, steps of a dynamic analysis, outputs), without computing it. |
+| `dies run <scenario> [--out folder]` | Computes the scenario and writes what its output section asks for (`ScenarioResults.write`). Default folder: `<scenario file name>_results` in the current folder. |
+| `--overwrite` | `run` writes into a folder that is not empty (otherwise it refuses, so that the files of two runs are not mixed). |
+| `--quiet`, `-q` | `run` prints only problems. |
+| `dies --version` | The installed version (`unknown` when run from the repository without installing). |
+
+An invalid scenario prints every problem, one per line and without a Python traceback, writes
+nothing and exits with code 1. Figures are only saved, never shown (no window opens). Warnings of
+the core, such as a crack crossing a layer boundary, are printed as one line each.
 
 ## Units
 
