@@ -29,9 +29,10 @@ except ImportError:
 import streamlit as st
 
 from dies.app import session, state
-from dies.app.ui import common, sidebar, setup, single_model, dynamic_model
+from dies.app.ui import common, sidebar, setup, single_model, dynamic_model, style
 
 st.set_page_config(page_title='DiES', layout='wide')
+style.apply()
 
 # First run of the session: the example scenario
 session.init()
@@ -62,14 +63,15 @@ if others:
 # Problems of the dynamic analysis itself (e.g. its step), shown in its tab
 dynamic_only = [p for p in dynamic_problems if p not in static_problems]
 
-# The two tabs
-single_tab, dynamic_tab = st.tabs(['Single model', 'Dynamic model'])
-with single_tab:
-    single_model.render(static_scenario, static_problems,
-                        state.scenario_key(static_scenario) if static_scenario else None)
-with dynamic_tab:
-    dynamic_model.render(dynamic_scenario, dynamic_only,
-                         state.scenario_key(dynamic_scenario) if dynamic_scenario else None)
+# The two tabs, in a box like the model setup (its key gives the CSS class used by ui/style.py)
+with st.container(border=True, key='models'):
+    single_tab, dynamic_tab = st.tabs(['Single model', 'Dynamic model'])
+    with single_tab:
+        single_model.render(static_scenario, static_problems,
+                            state.scenario_key(static_scenario) if static_scenario else None)
+    with dynamic_tab:
+        dynamic_model.render(dynamic_scenario, dynamic_only,
+                             state.scenario_key(dynamic_scenario) if dynamic_scenario else None)
 
 # Save button, in its place of the sidebar, now that the whole form is known
 sidebar.render_save(side_slots['save'], form)

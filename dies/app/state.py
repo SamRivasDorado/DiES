@@ -15,7 +15,8 @@ files (docs/scenario.md). The "form" is a plain dict:
     lithostatic                      bool
     layers: list of {name, top (m), E (GPa), nu, density (kg/m3), friction, T (MPa)}
     crack: {name, upper_x, upper_y, lower_x, lower_y (m), aperture (m),
-            sigma_I, sigma_II, sigma_III (MPa)}
+            sigma_I, sigma_II, sigma_III (MPa)}; in aperture and sigma_I, 0 means
+            "not given" (opening_entries)
     dynamic: {increment: 'step' or 'steps', step (MPa), steps}
     plane_angle                      (deg) or None: only the label of the plane figures
 
@@ -174,8 +175,9 @@ def form_from_raw(raw):
         'name': item.get('name', 'crack 1'),
         'upper_x': _pair(item.get('upper_tip'), 0, 'length'), 'upper_y': _pair(item.get('upper_tip'), 1, 'length'),
         'lower_x': _pair(item.get('lower_tip'), 0, 'length'), 'lower_y': _pair(item.get('lower_tip'), 1, 'length'),
-        'aperture': to_display(item.get('aperture'), 'length'),
-        'sigma_I': to_display(item.get('sigma_I'), 'stress'),
+        # The one not given is shown as 0 (in the table, 0 means "not given"; see raw_from_form)
+        'aperture': to_display(item.get('aperture', '0 m'), 'length'),
+        'sigma_I': to_display(item.get('sigma_I', '0 MPa'), 'stress'),
         'sigma_II': to_display(item.get('sigma_II', '0 MPa'), 'stress'),
         'sigma_III': to_display(item.get('sigma_III', '0 MPa'), 'stress'),
     }
@@ -204,6 +206,28 @@ def _quantity_pair(a, b, kind):
     # A pair such as grid.x; None if either value is empty
     qa, qb = to_quantity(a, kind), to_quantity(b, kind)
     return None if qa is None or qb is None else [qa, qb]
+
+
+def opening_entries(aperture, sigma_I):
+    """
+    Which of the two ways of giving the opening goes to the scenario, as (key, kind)
+    pairs. In the table, an empty cell or a 0 means "not given" (27 Nov 2026: Sam typed 0
+    in the one he did not want, and the check took it as given):
+      - aperture > 0 (or negative, so that the check reports it) and sigma_I 0 or empty:
+        the aperture;
+      - aperture 0 or empty: sigma_I if it is not 0; if both are 0 or empty, neither
+        (the scenario then takes sigma_I = 0, e.g. a fault with shear only);
+      - both non-zero: both, and the check reports that only one can be given.
+    """
+    has_aperture = not is_blank(aperture) and float(aperture) != 0
+    has_sigma = not is_blank(sigma_I) and float(sigma_I) != 0
+    if has_aperture and has_sigma:
+        return [('aperture', 'length'), ('sigma_I', 'stress')]
+    if has_aperture:
+        return [('aperture', 'length')]
+    if has_sigma:
+        return [('sigma_I', 'stress')]
+    return []
 
 
 def raw_from_form(form, analysis='static', include_output=False):
@@ -238,13 +262,15 @@ def raw_from_form(form, analysis='static', include_output=False):
         layers.append(layer)
     raw['layers'] = layers
 
-    # The crack: aperture or sigma_I as typed (both, or neither, are reported by the check)
+    # The crack: tips and driving stresses
     c = form['crack']
     item = {'name': c.get('name') or 'crack 1'}
     _put(item, 'upper_tip', _quantity_pair(c['upper_x'], c['upper_y'], 'length'))
     _put(item, 'lower_tip', _quantity_pair(c['lower_x'], c['lower_y'], 'length'))
-    for key, kind in (('aperture', 'length'), ('sigma_I', 'stress'), ('sigma_II', 'stress'), ('sigma_III', 'stress')):
-        _put(item, key, to_quantity(c.get(key), kind))
+    for key, kind in opening_entries(c.get('aperture'), c.get('sigma_I')):
+        item[key] = to_quantity(c[key], kind)
+    for key in ('sigma_II', 'sigma_III'):
+        _put(item, key, to_quantity(c.get(key), 'stress'))
     raw['cracks'] = [item]
 
     raw['remote_stresses'] = {}
@@ -322,6 +348,8 @@ def describe_problem(problem):
         return 'Layer ' + str(index + 1) + (', ' + _LAYER_HEADERS.get(field, field) if field else '') + ': ' + message
     if parts and parts[0] == 'cracks':
         field = parts[2] if len(parts) > 2 else None
+        if message.startswith('give either aperture or sigma_I'):
+            return 'Crack: give the aperture or σI, and 0 in the other one'
         return 'Crack' + (', ' + _CRACK_FIELDS.get(field, field) if field else '') + ': ' + message
     # Pairs (grid.x[0]) are named by the pair
     base = where.split('[')[0]

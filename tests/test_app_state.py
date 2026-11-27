@@ -104,8 +104,38 @@ def test_empty_and_invalid_fields_are_reported_in_their_section():
     assert 'gravity: missing' in described
     assert 'cell size: missing' in described
     assert 'Layer 1, E (GPa): must be larger than 0' in described
-    assert any(d.startswith('Crack: give either aperture or sigma_I') for d in described)
+    assert 'Crack: give the aperture or σI, and 0 in the other one' in described
     assert 'step: must be larger than 0' in described
+
+
+def test_zero_means_not_given_for_the_opening():
+    """In the crack table, 0 in the aperture or in sigma_I means "not given" (Sam, 27 Nov 2026:
+    with 0 in one of them, the check took both as given and the error stayed)."""
+    form = state.form_from_raw(_read(DIKE))
+    assert form['crack']['aperture'] == 2 and form['crack']['sigma_I'] == 0   # the one not given shows 0
+
+    def opening(aperture, sigma_I, sigma_II=0.0):
+        form['crack'].update(aperture=aperture, sigma_I=sigma_I, sigma_II=sigma_II)
+        scenario, problems = state.check(state.raw_from_form(form, 'static'))
+        crack = scenario.data['cracks'][0] if scenario else None
+        return crack, [state.describe_problem(p) for p in problems]
+
+    # Sam's sequence: aperture 0 and sigma_I 10, then aperture 2 and sigma_I 0: both valid
+    crack, problems = opening(0.0, 10.0)
+    assert problems == [] and crack['aperture'] is None and crack['sigma_I'] == 10e6
+    crack, problems = opening(2.0, 0.0)
+    assert problems == [] and crack['aperture'] == 2.0 and crack['sigma_I'] == 0
+    # Empty cells work as 0
+    crack, problems = opening(None, 10.0)
+    assert problems == [] and crack['sigma_I'] == 10e6
+    # Both 0: no opening (a fault with shear only)
+    crack, problems = opening(0.0, 0.0, 15.0)
+    assert problems == [] and crack['aperture'] is None and crack['sigma_II'] == 15e6
+    # Both non-zero, or a negative aperture: reported
+    _, problems = opening(2.0, 10.0)
+    assert problems == ['Crack: give the aperture or σI, and 0 in the other one']
+    _, problems = opening(-1.0, 0.0)
+    assert problems[0].startswith('Crack, aperture: must be larger than 0')
 
 
 def test_two_layers_and_empty_rows():

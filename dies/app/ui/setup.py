@@ -58,8 +58,8 @@ def render():
             st.caption('Cohesion (implicit, C = 2|T|): ' + ' · '.join(cohesions))
         slots['layers'] = st.container()
 
-        # The crack (one for now): aperture or σI, not both
-        st.markdown('**Crack** (give the aperture or σI and leave the other one empty; σII > 0: normal sense)')
+        # The crack (one for now): aperture or σI, with 0 in the other one (0 means "not given")
+        st.markdown('**Crack** (give the aperture or σI, with 0 in the other one; σII > 0: normal sense)')
         crack = _frame([st.session_state['crack_row']], state.CRACK_COLUMNS)
         edited = st.data_editor(crack, key=session.key('crack_table'), num_rows='fixed', hide_index=True,
                                 column_config=_column_config(state.CRACK_COLUMNS), width='stretch')

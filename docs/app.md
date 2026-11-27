@@ -32,7 +32,10 @@ Extra arguments go to Streamlit, e.g. `dies-app --server.port 8502`.
   - Loading: remote stresses (MPa, tension positive) and the lithostatic stresses.
 - **Model setup** (above the tabs): the layers (from the top down, the first one from the surface;
   rows can be added and removed) and the crack (aperture **or** σI, plus σII and σIII), as editable
-  tables. The cohesion is implicit, C = 2|T|, and is shown under the layers.
+  tables. In the crack table, 0 (or an empty cell) in the aperture or in σI means "not given": give
+  one of them and leave 0 in the other; with both at 0 the crack has no opening (e.g. a fault with
+  shear only). The cohesion is implicit, C = 2|T|, and is shown under the layers.
+- **The models**, in a box below the model setup, with two tabs:
 - **Single model** tab: one evaluation of the model, with its Run button. Views: Model (sketch of
   the model and profile of the crack walls, without computing), Displacements, Stresses, Principal
   & trajectories, Planes & failure, Export.
@@ -68,7 +71,7 @@ Units in the forms: m, MPa, GPa (E), kg/m³, m/s². The saved YAML writes every 
 | `dies/app/figures.py` | Figures of the app (`plot_model`, `plot_crack`) and `render()` to image bytes. | no |
 | `dies/app/session.py` | Widget keys (with a version number) and session state. | yes |
 | `dies/app/compute.py` | Cached runs and figures. | yes |
-| `dies/app/ui/` | Sidebar, model setup, Single model and Dynamic model tabs. | yes |
+| `dies/app/ui/` | Sidebar, model setup, Single model and Dynamic model tabs; `style.py`: a few CSS rules (faint −, + and × buttons in the number fields, larger main tabs). | yes |
 | `dies/app/streamlit_app.py` | Entry point. | yes |
 | `dies/app/launcher.py` | The `dies-app` command. | yes |
 

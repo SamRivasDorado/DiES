@@ -45,6 +45,15 @@ def test_app_starts_with_the_example():
     assert not app.button(key='run_static').disabled and not app.button(key='run_dynamic').disabled
 
 
+def test_style_targets_the_box_of_the_models():
+    """The CSS of ui/style.py styles the tabs of the box with key 'models', the one around the two
+    tabs in streamlit_app.py (checked by eye in a browser: AppTest does not render CSS)."""
+    from dies.app.ui import style
+    assert '.st-key-models [data-testid="stTab"]' in style.CSS
+    with open(APP, encoding='utf-8') as f:
+        assert "st.container(border=True, key='models')" in f.read()
+
+
 def test_single_model_gives_the_results_of_the_scenario():
     """Run single model: the static results are those of Scenario.run(), bit for bit."""
     app = _start()
