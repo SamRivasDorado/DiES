@@ -116,11 +116,12 @@ def test_python_m_dies(tmp_path):
 
 
 def test_entry_point_declared():
-    """pyproject.toml installs the `dies` command, pointing at dies.cli:main."""
+    """pyproject.toml installs the `dies` command, pointing at dies.cli:main (and, since
+    Phase 4, the `dies-app` command of the app)."""
     try:
         import tomllib
     except ImportError:
         pytest.skip('tomllib needs Python 3.11')
     with open(os.path.join(ROOT, 'pyproject.toml'), 'rb') as f:
         project = tomllib.load(f)['project']
-    assert project['scripts'] == {'dies': 'dies.cli:main'}
+    assert project['scripts'] == {'dies': 'dies.cli:main', 'dies-app': 'dies.app.launcher:main'}

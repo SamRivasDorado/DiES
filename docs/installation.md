@@ -56,7 +56,13 @@ dies run examples/dike_example.yaml --out results/ # compute it and write its ou
 Without installing, the same command works from the repository folder as `python -m dies ...`.
 
 Optional extras:
-`pip install -e .[test]` (pytest) and `pip install -e .[xarray]` (for `DiESResults.to_xarray()`).
+`pip install -e .[test]` (pytest), `pip install -e .[xarray]` (for `DiESResults.to_xarray()`) and
+`pip install -e .[app]` (Streamlit, for the app).
+
+## 3. The app
+
+With the `app` extra installed, `dies-app` opens the DiES app in the browser (without installing,
+from the repository folder: `streamlit run dies/app/streamlit_app.py`). See `docs/app.md`.
 
 A normal installation (`pip install .`, without `-e`) copies the modules and works the same,
 but then changes to the repository need a new installation.

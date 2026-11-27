@@ -31,11 +31,14 @@ dependencies = [
 [project.scripts]
 # The command line: dies run scenario.yaml --out results/ (dies/cli.py)
 dies = "dies.cli:main"
+# The app in the browser (dies/app/, Phase 4); needs the app extra: pip install -e .[app]
+dies-app = "dies.app.launcher:main"
 
 [project.optional-dependencies]
-# pytest for the tests; xarray only for DiESResults.to_xarray()
+# pytest for the tests; xarray only for DiESResults.to_xarray(); streamlit for the app
 test = ["pytest"]
 xarray = ["xarray"]
+app = ["streamlit>=1.40"]
 
 [tool.setuptools]
 # The modules at the root, installed with their current names, so that they keep
@@ -49,4 +52,5 @@ py-modules = [
     "results",
     "plotting",
 ]
-packages = ["dies"]
+# The dies package and the app (dies/app/ and its interface, dies/app/ui/)
+packages = ["dies", "dies.app", "dies.app.ui"]

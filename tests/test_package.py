@@ -45,7 +45,10 @@ def test_pyproject_lists_every_core_module():
     listed = set(config['tool']['setuptools']['py-modules'])
     root_modules = {os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(ROOT, '*.py'))}
     assert listed == root_modules - {'Running_Models'}
-    assert config['tool']['setuptools']['packages'] == ['dies']
+    # Every folder of the dies package with an __init__.py is listed (since Phase 4: dies.app, dies.app.ui)
+    packages = sorted(os.path.relpath(os.path.dirname(p), ROOT).replace(os.sep, '.')
+                      for p in glob.glob(os.path.join(ROOT, 'dies', '**', '__init__.py'), recursive=True))
+    assert sorted(config['tool']['setuptools']['packages']) == packages
 
 
 def test_facade_runs_a_model():
