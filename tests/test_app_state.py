@@ -284,14 +284,51 @@ def test_probe_profile_and_plane_angle(dike_run):
 def test_overlays_and_profile_plot(dike_run):
     import matplotlib.pyplot as plt
     import plotting
-    fig = figures.add_overlays(plotting.plot_stresses(dike_run.static, 'sxx'), (0, -500), ((-4000, -100), (4000, -100)))
-    assert [t.get_text() for t in fig.axes[0].texts if t.get_text() in 'AB'] == ['A', 'B']
+    import matplotlib.transforms as mtransforms
+    probes = [(-50, -600, 'P1'), (950, -600, 'P2'), (4950, -3000, 'P3')]
+    profiles = [((-4950, -100), (4950, -100), '1'), ((-4950, -3000), (4950, -3000), '2')]
+    fig = figures.add_overlays(plotting.plot_stresses(dike_run.static, 'sxx'), probes, profiles)
+    ax = fig.axes[0]
+    labels = [t for t in ax.texts if t.get_text() in ('A1', 'B1', 'A2', 'B2', 'P1', 'P2', 'P3')]
+    assert sorted(t.get_text() for t in labels) == ['A1', 'A2', 'B1', 'B2', 'P1', 'P2', 'P3']
+    # Every label stays inside the map, also those at its edges (Sam, 27 Nov 2026)
+    fig.canvas.draw()
+    box = ax.get_window_extent()
+    for text in labels:
+        extent = text.get_window_extent()
+        assert box.x0 - 1 <= extent.x0 and extent.x1 <= box.x1 + 1, text.get_text()
+        assert box.y0 - 1 <= extent.y0 and extent.y1 <= box.y1 + 1, text.get_text()
+    # The marks do not change the limits of the map
+    assert ax.get_xlim() == tuple(dike_run.static.metadata['x_limits'])
     plt.close(fig)
     from dies.app import views
     data = views.profile(dike_run, views.figure('Displacements', 'uxy'), (-4000, -100), (4000, -100), n=20)
-    fig = figures.plot_profile(data)
-    assert len(fig.axes) == 2
+    fig = figures.plot_profile(data, figures.line_colour(1), title='Profile 2', minor_grid=True, markers=True)
+    assert len(fig.axes) == 2 and fig.axes[0].get_lines()[0].get_color() == figures.line_colour(1)
     plt.close(fig)
+    fig = figures.plot_profile(data, axis_labels=False)
+    assert fig.axes[0].get_ylabel() == '' and fig.axes[0].texts[0].get_text() == 'ux (m)'
+    plt.close(fig)
+
+
+def test_arrow_spacing_and_probe_table(dike_run):
+    """Arrow density: the static results at one node every n, centred, without computing again; the
+    probe table has one row per probe."""
+    from dies.app import views
+    res = dike_run.static
+    every3 = views.subsample(res, 3)
+    rows, columns = res.shape
+    assert every3.shape == ((rows - 1)//3 + 1, (columns - 1)//3 + 1)
+    i0 = ((rows - 1) % 3)//2 ; j0 = ((columns - 1) % 3)//2
+    np.testing.assert_array_equal(every3['ux'], res['ux'][i0::3, j0::3])
+    assert views.subsample(res, 1) is res
+    item = views.figure('Displacements', 'uxy')
+    assert item.results(dike_run, {'arrow_spacing': 3}).shape == every3.shape
+    assert item.results(dike_run, {'arrow_spacing': None}).shape == dike_run.coarse().shape
+    assert views.style_for(item, {'arrow_spacing': 3, 'arrow_scale': 2.0}) == ({'arrow_scale': 2.0}, None)
+    table = views.probe_table(dike_run, [(0, -500, 'P1'), (1000, -2000, 'P2')])
+    assert [row['Probe'] for row in table] == ['P1', 'P2']
+    assert table[1]['node x (m)'] == res.probe(1000, -2000)['x']
 
 
 def test_plane_angle_is_not_in_the_key():

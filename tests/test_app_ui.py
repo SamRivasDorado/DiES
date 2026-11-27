@@ -136,13 +136,39 @@ def test_views_of_the_single_model():
     app.checkbox(key='Stresses.center_zero').check().run()
     app.checkbox(key='Stresses.contour_labels').uncheck().run()
     assert not app.exception
-    # Probe tables (one per view) and the profile CSV buttons
-    assert len(app.dataframe) >= len(views.VIEWS)
-    app.number_input(key='Stresses.probe_x').set_value(1000.0).run()
+    # Arrow density on the arrows
+    app.selectbox(key='Displacements.figure').set_value('uxy').run()
+    app.selectbox(key='Displacements.arrow_spacing').set_value(3).run()
     assert not app.exception
     # The plane angle only changes a label
     app.number_input(key=_key(app, 'plane_angle')).set_value(45.0).run()
     assert not any('The inputs have changed' in w.value for w in app.warning)
+
+
+def test_probes_and_profiles_are_added_and_shared():
+    """No probe or profile at first; Add creates them (the first profile along the surface); a probe
+    moved in one view is moved in all; Remove takes it out; the dynamic table shows the shares."""
+    app = _start()
+    app.button(key='run_static').click().run()
+    assert app.session_state['probes'] == [] and app.session_state['profiles'] == []
+    app.button(key='Stresses.add_probe').click().run()
+    app.button(key='Stresses.add_probe').click().run()
+    app.button(key='Stresses.add_profile').click().run()
+    assert not app.exception
+    probes, profiles = app.session_state['probes'], app.session_state['profiles']
+    assert len(probes) == 2 and len(profiles) == 1
+    top = app.session_state['static_run']['results'].static.y_nodes().max()
+    assert profiles[0]['ay'] == profiles[0]['by'] == round(top, 1)
+    # Moved in Displacements, moved in Stresses too
+    app.number_input(key='Displacements.probes%d.x' % probes[0]['id']).set_value(1234.0).run()
+    assert app.session_state['Stresses.probes%d.x' % probes[0]['id']] == 1234.0
+    assert not app.exception
+    app.button(key='Stresses.remove_probe%d' % probes[0]['id']).click().run()
+    assert len(app.session_state['probes']) == 1 and not app.exception
+    # Dynamic model: the table of the last step with the shares of the nodes that fail
+    app.button(key='run_dynamic').click().run()
+    tables = [d.value for d in app.dataframe if 'Share of the nodes that fail' in d.value.columns]
+    assert tables and 'Below' not in list(tables[0].iloc[:, 0])
 
 
 def test_export_view():

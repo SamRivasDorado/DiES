@@ -44,7 +44,8 @@ def render():
     containers for the problems of the layers ('layers') and of the crack ('cracks').
     """
     slots = {}
-    with st.expander('Model setup: layers and crack', expanded=True):
+    # In a container with a key, so that ui/style.py can give it its own background
+    with st.container(key='setup'), st.expander('Model setup: layers and crack', expanded=True):
         # Layers, from the top down; rows can be added and removed
         st.markdown('**Layers** (from the top down; the first one starts at the surface, top y = 0)')
         layers = _frame(st.session_state['layers_rows'], state.LAYER_COLUMNS)

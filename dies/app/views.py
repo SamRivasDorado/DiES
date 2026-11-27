@@ -19,10 +19,17 @@ import numpy as np
 
 import plotting
 
-# Drawing options of the app, by kind of figure (names of plotting.STYLE_DEFAULTS, plus
-# 'step', the contour interval)
+# Drawing options of the app, by kind of figure: names of plotting.STYLE_DEFAULTS, plus two
+# of the app: 'step', the contour interval, and 'arrow_spacing', the density of the arrows
+# (one every n nodes of the grid; None: the coarser grid of the scenario figures)
 SCALAR = ('cmap', 'limits', 'center_zero', 'contours', 'contour_labels', 'step')
-ARROWS = ('cmap', 'limits', 'center_zero', 'arrow_scale', 'info_box')
+ARROWS = ('cmap', 'limits', 'center_zero', 'arrow_scale', 'arrow_spacing', 'info_box')
+TRAJECTORIES = ('arrow_scale', 'arrow_spacing')
+# Options of the app that are not passed to plotting.py
+APP_OPTIONS = ('step', 'arrow_spacing')
+
+# Arrow spacings offered: one arrow every n nodes of the grid
+ARROW_SPACINGS = [None, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20]
 
 # Colour maps offered (None: the figure's own one)
 COLOUR_MAPS = [None, 'viridis', 'cividis', 'plasma', 'magma', 'inferno', 'RdBu_r', 'coolwarm', 'seismic',
@@ -45,9 +52,31 @@ class Figure(object):
         self.key, self.label, self.grid, self.options = key, label, grid, options
         self.unit, self.profile, self.draw = unit, profile, draw
 
-    def results(self, run):
-        """The results this figure is drawn from."""
+    def results(self, run, options=None):
+        """
+        The results this figure is drawn from. For the arrows and trajectories, with an
+        arrow spacing n in options, the static results at one node every n (subsample).
+        """
+        spacing = (options or {}).get('arrow_spacing')
+        if self.grid == 'coarse' and spacing:
+            return subsample(run.static, int(spacing))
         return {'coarse': run.coarse, 'failure': run.failure}.get(self.grid, lambda: run.static)()
+
+
+def subsample(res, n):
+    """
+    The results at one node every n along x and y (Phase 4: the arrow density of the app),
+    centred on the grid. The values are those of the nodes kept: nothing is computed again.
+    """
+    from results import DiESResults
+    if n <= 1:
+        return res
+    rows, columns = res.shape
+    # Start so that the nodes left out are shared between both sides
+    i0 = ((rows - 1) % n)//2 ; j0 = ((columns - 1) % n)//2
+    cut = (slice(i0, None, n), slice(j0, None, n))
+    fields = {name: values[cut] for name, values in res.fields.items()}
+    return DiESResults(res.x[cut], res.y[cut], fields, res.metadata, res.units)
 
 
 def _displacement(component, option):
@@ -80,7 +109,8 @@ def _mpa(field, label):
     return (field, 'fine', 1e-6, label + ' (MPa)')
 
 
-# The views and their figures, in the order of the selectors
+# The views and their figures, in the order of the selectors (the arrows and trajectories are
+# drawn on the coarser grid of the scenario figures, or with the arrow spacing chosen)
 VIEWS = OrderedDict([
     ('Displacements', [
         Figure('uxy', '|u| in the plane: arrows', 'coarse', ARROWS, 'm', [_UX, _UY], _displacement('uxy', 'vectors')),
@@ -107,9 +137,9 @@ VIEWS = OrderedDict([
         Figure('s3', 'σ3 (minimum compressive)', 'fine', SCALAR, 'MPa', [_S3], _principal('secondary')),
         Figure('angle', 'Orientation of σ1', 'fine', ('cmap',), 'deg', [('s1a', 'fine', 1.0, 'σ1 angle from +x (°)')],
                _principal('angle')),
-        Figure('trajectories', 'Trajectories of σ1 and σ3', 'coarse', ('arrow_scale',), '', [_S1, _S3],
+        Figure('trajectories', 'Trajectories of σ1 and σ3', 'coarse', TRAJECTORIES, '', [_S1, _S3],
                lambda res, run, style, step, extra: plotting.plot_stress_trajectories(res, False, **style)),
-        Figure('trajectories_planes', 'Trajectories and optimal shear planes', 'coarse', ('arrow_scale',), '',
+        Figure('trajectories_planes', 'Trajectories and optimal shear planes', 'coarse', TRAJECTORIES, '',
                [_S1, _S3],
                lambda res, run, style, step, extra: plotting.plot_stress_trajectories(res, True, **style)),
     ]),
@@ -144,7 +174,7 @@ def style_for(item, options):
     """
     style = {}
     for name in item.options:
-        if name == 'step':
+        if name in APP_OPTIONS:
             continue
         value = options.get(name)
         if value is not None and value != plotting.STYLE_DEFAULTS[name]:
@@ -201,6 +231,21 @@ def default_profile(res):
     x, y = res.x_nodes(), res.y_nodes()
     top = float(np.max(y))
     return (float(np.min(x)), top), (float(np.max(x)), top)
+
+
+def probe_table(run, points):
+    """
+    The probes as one table (Sam, 27 Nov 2026: a band under the figure): one row per probe,
+    as a list of dicts with 'Probe' (its label), the node used ('node x (m)', 'node y (m)')
+    and the value of each field of PROBE_FIELDS. points: (x, y, label) of each probe.
+    """
+    rows = []
+    for x, y, label in points:
+        node_x, node_y, values = probe(run, x, y)
+        row = OrderedDict([('Probe', label), ('node x (m)', node_x), ('node y (m)', node_y)])
+        row.update(values)
+        rows.append(row)
+    return rows
 
 
 def profile(run, item, A, B, n=200):

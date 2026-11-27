@@ -5,9 +5,10 @@ compute_dynamic_model). Phase 4, step 1: the increment, the Run button and a sum
 of the final step; the figures of the steps come in step 3.
 """
 
-import numpy as np
 import pandas as pd
 import streamlit as st
+
+import plotting
 
 from dies.app import compute, session
 from dies.app.ui import common
@@ -64,13 +65,18 @@ def render(scenario, problems, key):
     last = dyn[-1].metadata
     st.markdown('**%d steps.** Final driving stresses: σI = %g MPa, σII = %g MPa, σIII = %g MPa.'
                 % (len(dyn), round(last['dx']/1e6, 3), round(last['dy']/1e6, 3), round(last['dz']/1e6, 3)))
-    modes, counts = np.unique(dyn.final_mode(), return_counts=True)
+    # Nodes of each failure state at the last step, with their share of the nodes that fail
+    # (as in the legend of the failure-mode map; Sam, 27 Nov 2026): 'Below' is left out
+    shares = plotting.failure_mode_shares(dyn.final_mode())
+    rows = [(mode, n, '%.1f %%' % percent if percent is not None else '') for mode, n, percent in shares
+            if mode != 'Below']
+    below = sum(n for mode, n, _ in shares if mode == 'Below')
+    if rows:
+        table = pd.DataFrame(rows, columns=['Failure state at the last step', 'Nodes', 'Share of the nodes that fail'])
+        st.dataframe(table, hide_index=True, width='content')
     first = dyn.failure_step()
-    table = pd.DataFrame({'Failure mode at the last step': modes, 'Nodes': counts})
-    st.dataframe(table, hide_index=True, width='content')
     failed = first > 0
-    if failed.any():
-        st.caption('Nodes that failed during the run: %d; the first ones at step %d.'
-                   % (int(failed.sum()), int(first[failed].min())))
+    st.caption('Nodes below failure at the last step: %d of %d.' % (below, first.size)
+               + (' First failures at step %d.' % int(first[failed].min()) if failed.any() else ''))
     st.info('The figures of the steps (σn and failure planes, failure-mode map, step of first failure) come in '
             'step 3 of the app.')

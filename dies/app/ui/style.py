@@ -5,6 +5,8 @@ dark themes.
 
 - Number fields: the −, + and × (clear) buttons are faint until the pointer is over
   the field.
+- Backgrounds: the model setup (st.container with key 'setup') bluish, the box of the
+  models neutral grey, so that they are told apart.
 - The box of the models (st.container with key 'models'): its two tabs, Single model
   and Dynamic model, are larger and drawn as tabs with a background; the tabs inside
   them (Model, Displacements...) keep Streamlit's look.
@@ -27,6 +29,15 @@ CSS = """
 [data-testid="stNumberInput"]:hover [data-testid="stNumberInputStepUp"],
 [data-testid="stNumberInput"]:hover [data-testid="stNumberInputClearButton"] {
     opacity: 0.75;
+}
+
+/* Backgrounds of the two boxes, slightly different so that they are told apart (Sam,
+   27 Nov 2026): the model setup bluish, the box of the models neutral grey */
+.st-key-setup [data-testid="stExpander"] details {
+    background: rgba(70, 130, 220, 0.09);
+}
+.st-key-models {
+    background: rgba(128, 128, 128, 0.07);
 }
 
 /* Main tabs of the box of the models: larger, bold, each one on its own background */

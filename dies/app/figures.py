@@ -5,8 +5,9 @@ rendering of any figure to image bytes. No Streamlit here.
 - plot_model(scenario): sketch of the model before computing it: the grid, the layers
   with their properties, the crack and the surface.
 - render(draw, fmt, dpi): draws a figure, saves it to bytes (png, pdf or svg) and closes it.
-- add_overlays(figure, probe, profile): marks the probe and the profile line on a map.
-- plot_profile(data): the line plot of a profile.
+- add_overlays(figure, probes, profiles): marks the probes and the profile lines on a map,
+  with their labels kept inside it.
+- plot_profile(data, colour, title, **options): the line plot of a profile.
 
 pyplot keeps a global state and is not safe when several threads draw at the same time
 (Streamlit serves each session in its own thread), so every figure is drawn and saved
@@ -133,37 +134,103 @@ def plot_crack(scenario):
     return plotting.plot_crack_displacements(disc, v, E)
 
 
-def add_overlays(figure, probe=None, profile=None):
+# Colours of the probes and profiles, in the order they are added: on the maps (bright,
+# with a black halo, readable on any colour map) and in the profile plots (darker, readable
+# on white). The same index gives the same probe or profile in both.
+MARK_COLOURS = ['white', '#00e5ff', '#ff4fd8', '#ffd400', '#7cfc00', '#ff9f1c']
+LINE_COLOURS = ['#1f5fad', '#00838f', '#c2185b', '#b8860b', '#2e7d32', '#e65100']
+
+
+def mark_colour(index):
+    """Colour of probe or profile number index (from 0) on the maps."""
+    return MARK_COLOURS[index % len(MARK_COLOURS)]
+
+
+def line_colour(index):
+    """Colour of profile number index (from 0) in its plot."""
+    return LINE_COLOURS[index % len(LINE_COLOURS)]
+
+
+def _inward_label(ax, point, text, colour, halo, beside=True):
     """
-    Marks the probe and the profile on a map figure (its first axes), on top of everything:
-    probe: (x, y) of the node used, a white circle; profile: (A, B), a dashed white line
-    with its ends labelled A and B. Returns the figure.
+    Writes text next to point, on the side towards the centre of the axes, so that it
+    always stays inside the map (Sam, 27 Nov 2026: a label at the right edge ran out of it).
+    beside: diagonally beside the point (the ends of a profile); otherwise just above or
+    below it (the probes, so that the labels of two probes side by side do not run together).
+    """
+    (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+    upper = point[1] > (y0 + y1)/2
+    if beside:
+        right = point[0] > (x0 + x1)/2
+        dx, ha = (-5, 'right') if right else (5, 'left')
+    else:
+        # Centred on the point, unless it is near a side of the map
+        third = (point[0] - x0)/(x1 - x0) if x1 != x0 else 0.5
+        dx, ha = 0, ('left' if third < 0.1 else 'right' if third > 0.9 else 'center')
+    dy = -7 if upper else 7
+    ax.annotate(text, point, xytext=(dx, dy), textcoords='offset points', ha=ha, va='top' if upper else 'bottom',
+                color=colour, fontsize=10, fontweight='bold', zorder=21, annotation_clip=True, **halo)
+
+
+def add_overlays(figure, probes=(), profiles=()):
+    """
+    Marks the probes and the profiles on a map figure (its first axes), on top of everything:
+    probes: (x, y, label) of each probe (the node used), a circle with its label;
+    profiles: ((xa, ya), (xb, yb), label) of each profile, a dashed line with its ends
+    labelled A<label> and B<label>. The n-th probe or profile gets the n-th colour of
+    MARK_COLOURS. The labels are kept inside the axes. Returns the figure.
     """
     ax = figure.axes[0]
+    limits = ax.get_xlim(), ax.get_ylim()
     halo = dict(path_effects=[patheffects.withStroke(linewidth=3, foreground='black')])
-    if profile is not None:
-        (xa, ya), (xb, yb) = profile
-        ax.plot((xa, xb), (ya, yb), c='white', lw=1.8, ls='--', zorder=20, **halo)
-        for (px, py), name in (((xa, ya), 'A'), ((xb, yb), 'B')):
-            ax.annotate(name, (px, py), xytext=(4, -12), textcoords='offset points', color='white',
-                        fontsize=11, fontweight='bold', zorder=21, **halo)
-    if probe is not None:
-        ax.scatter([probe[0]], [probe[1]], s=70, facecolors='white', edgecolors='black', linewidths=1.5, zorder=22)
+    for i, ((xa, ya), (xb, yb), label) in enumerate(profiles):
+        colour = mark_colour(i)
+        ax.plot((xa, xb), (ya, yb), c=colour, lw=1.8, ls='--', zorder=20, **halo)
+        _inward_label(ax, (xa, ya), 'A' + label, colour, halo)
+        _inward_label(ax, (xb, yb), 'B' + label, colour, halo)
+    for i, (x, y, label) in enumerate(probes):
+        colour = mark_colour(i)
+        ax.scatter([x], [y], s=70, facecolors=colour, edgecolors='black', linewidths=1.5, zorder=22)
+        _inward_label(ax, (x, y), label, colour, halo, beside=False)
+    # The marks must not change the limits of the map
+    ax.set_xlim(limits[0]) ; ax.set_ylim(limits[1])
     return figure
 
 
-def plot_profile(data, distance_label='distance (m)'):
+# Options of the profile plots (Sam, 27 Nov 2026), and their defaults
+PROFILE_OPTIONS = {'major_grid': True, 'minor_grid': False, 'axis_labels': True, 'line_width': 1.8, 'markers': False}
+
+
+def plot_profile(data, colour=LINE_COLOURS[0], title=None, distance_label='distance (m)', **options):
     """
     Line plot of a profile (dies.app.views.profile): one panel per field, against the
-    distance from A. Returns the figure.
+    distance from A, in colour. options (PROFILE_OPTIONS): major_grid, minor_grid,
+    axis_labels (the axis titles; without them, the field is written inside its panel),
+    line_width, markers (one per sampled point). Returns the figure.
     """
+    style = dict(PROFILE_OPTIONS)
+    style.update(options)
     fields = [label for label in data if label not in (distance_label, 'x (m)', 'y (m)')]
-    figure, axes = plt.subplots(len(fields), 1, figsize=(5, 1.9*len(fields) + 0.8), sharex=True, squeeze=False,
+    figure, axes = plt.subplots(len(fields), 1, figsize=(5, 1.9*len(fields) + 0.9), sharex=True, squeeze=False,
                                 tight_layout=True)
     for ax, label in zip(axes[:, 0], fields):
-        ax.plot(data[distance_label], data[label], c='#1F5FAD', lw=1.8)
-        ax.set_ylabel(label, fontsize=9)
-        ax.grid(alpha=0.3)
+        ax.plot(data[distance_label], data[label], c=colour, lw=style['line_width'],
+                marker='o' if style['markers'] else None, markersize=2.5)
+        # Grids: major and minor lines, each one optional
+        if style['minor_grid']:
+            ax.minorticks_on()
+            ax.grid(which='minor', alpha=0.15, lw=0.5)
+        if style['major_grid']:
+            ax.grid(which='major', alpha=0.35)
         ax.tick_params(labelsize=8)
-    axes[-1, 0].set_xlabel('Distance from A (m)', fontsize=9)
+        if style['axis_labels']:
+            ax.set_ylabel(label, fontsize=9)
+        else:
+            # The name of the field inside the panel, at its upper left corner
+            ax.text(0.01, 0.97, label, transform=ax.transAxes, ha='left', va='top', fontsize=8,
+                    bbox=dict(fc='white', ec='none', alpha=0.8, pad=1))
+    if style['axis_labels']:
+        axes[-1, 0].set_xlabel('Distance from A (m)', fontsize=9)
+    if title:
+        axes[0, 0].set_title(title, fontsize=10, color=colour, fontweight='bold')
     return figure

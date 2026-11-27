@@ -114,11 +114,15 @@ state['failure_mode']         # 'Below', 'Above', a failure mode or 'Singular' (
 state['failure_contact_mode'] # the mode where the circle would touch the envelope, at every node
 state['failure_sn'], state['failure_ss'], state['failure_theta']   # on the failure plane, where at failure
 
-fig = plotting.plot_failure_modes(state)    # one colour per state, with the number of nodes of each
+fig = plotting.plot_failure_modes(state)    # one colour per state; legend under the map with the share
+                                            # of each state among the nodes that fail
+plotting.failure_mode_shares(state['failure_mode'])   # [(state, nodes, percent or None), ...]
 fig = plotting.plot_failure_ratio(state)    # r/r_c, white at 1, with the edges of the failure band
 ```
 
-`plot_failure_modes` also draws the `failure_mode` of a step of a dynamic model. Its colours are
+The shares are relative to the nodes that fail, i.e. all but `Below` and `Singular`, which are
+counted but get no share; the legend leaves out `Below` (the grey of the map) (Sam's choice,
+27 Nov 2026). `plot_failure_modes` also draws the `failure_mode` of a step of a dynamic model. Its colours are
 those of `tests/failure_check.py`: below failure light grey, above it red, Mode I blue, mixed-mode
 I-II dodgerblue, Mode II tension-compression purple, Mode II compression orange, singular black.
 

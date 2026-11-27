@@ -42,21 +42,28 @@ Extra arguments go to Streamlit, e.g. `dies-app --server.port 8502`.
   - **Displacements** (ux, uy or |u|, as arrows or colour maps), **Stresses** (σxx, σyy, σxy, σxz,
     σzz, mean stress, maximum shear), **Principal & trajectories** (σ1, σ3, orientation of σ1,
     trajectories with or without the optimal shear planes) and **Planes & failure** (σn and τ on
-    the optimal shear planes, with the angle α of their label; the failure state of each node and
-    r/r_c, how close it is to failure). Each view has a selector of its figures, the **drawing
-    options** (colour map, colours centred on 0, manual colour limits, contours and their labels,
-    manual contour step, text box, arrow length; those a figure does not take are disabled), the
-    figure with its PNG, PDF and SVG downloads, and beside it:
-    - the **probe**: x and y, and a table with the values at the nearest node (whose coordinates
-      are shown): displacements, stresses, principal stresses and the orientation of σ1, σn and τ,
-      r/r_c and the failure state; the node is marked on the map;
-    - the **profile A → B**: the fields of the figure along the line, as a plot and as CSV; by
-      default along the top row of nodes, from one side of the grid to the other (the surface
-      profile, e.g. the subsidence and extension above a dike); the line is drawn on the map;
+    the optimal shear planes, with the angle α of their label; the failure state of each node,
+    with the share of each failure mode among the nodes that fail, and r/r_c, how close each node
+    is to failure). Each view, from top to bottom (layout of Sam's sketch, 27 Nov 2026):
+    - a selector of its figures and the **drawing options** (colour map, colours centred on 0,
+      manual colour limits, contours and their labels, manual contour step, text box, arrow length
+      and **arrow density**, one arrow every n nodes; those a figure does not take are disabled);
+    - the figure, with its PNG, PDF and SVG downloads;
+    - the **probes**, added with *Add probe* and removed one by one (none at first): x and y of
+      each one, and one table with a row per probe: the node used and its displacements, stresses,
+      principal stresses and orientation of σ1, σn and τ, r/r_c and failure state;
+    - the **profiles**, added with *Add profile* (none at first; the first one runs along the top
+      row of nodes, the surface profile; the second one through the centre of the crack), two per
+      row: A and B, the plot of the fields of the figure along the line, its CSV, and a button back
+      to the surface profile; the **profile plot options** (major and minor grids, axis labels,
+      sampled points, line width) apply to all of them.
+    The probes and profiles are shared by the views (moved in one, moved in all), each with its
+    colour and label on the map (P1, P2…; A1–B1, A2–B2…), kept inside the map.
   - **Export**: a ZIP with what `dies run` writes: `scenario.yaml`, the results files (npz, csv)
     and the figures chosen, drawn with their default options.
 - **Dynamic model** tab: the driving stresses grow step by step (the stress added at each step, or
-  the number of steps), with its Run button and a summary of the last step.
+  the number of steps), with its Run button and a summary of the last step: the nodes of each
+  failure state and their share of the nodes that fail (those below failure are counted apart).
 
 Units in the forms: m, MPa, GPa (E), kg/m³, m/s². The saved YAML writes every value with its unit.
 
@@ -85,12 +92,12 @@ Units in the forms: m, MPa, GPa (E), kg/m³, m/s². The saved YAML writes every 
 |---|---|---|
 | `dies/app/defaults.py` | The scenario the app opens with (the dike example; `examples/` is not installed with the package). | no |
 | `dies/app/state.py` | Forms ⇄ scenario dict, display units, problems → sections and readable messages, cache key, reading and writing YAML/JSON. | no |
-| `dies/app/figures.py` | Figures of the app (`plot_model`, `plot_crack`, `plot_profile`), the probe and profile marks (`add_overlays`) and `render()` to image bytes. | no |
-| `dies/app/views.py` | The figures of each view of the single model: how they are drawn (with `plotting.py`), their drawing options and the fields of their profile; the probe, the default profile and the optimal plane angle. | no |
+| `dies/app/figures.py` | Figures of the app (`plot_model`, `plot_crack`, `plot_profile` with its options), the marks of the probes and profiles (`add_overlays`, labels kept inside the map) and `render()` to image bytes. | no |
+| `dies/app/views.py` | The figures of each view of the single model: how they are drawn (with `plotting.py`), their drawing options and the fields of their profile; the arrow density (`subsample`), the probe table, the default profile and the optimal plane angle. | no |
 | `dies/app/export.py` | The ZIP of the Export view, written by `ScenarioResults.write()` from the results of the run. | no |
 | `dies/app/session.py` | Widget keys (with a version number) and session state. | yes |
 | `dies/app/compute.py` | Cached runs and figures. | yes |
-| `dies/app/ui/` | Sidebar, model setup, Single model and Dynamic model tabs; `result_view.py`: one view of the results (selector, drawing options, figure, probe, profile); `style.py`: a few CSS rules (faint −, + and × buttons in the number fields, larger main tabs). | yes |
+| `dies/app/ui/` | Sidebar, model setup, Single model and Dynamic model tabs; `result_view.py`: one view of the results (selector, drawing options, figure, probes, profiles); `style.py`: a few CSS rules (faint −, + and × buttons in the number fields, larger main tabs, different backgrounds for the model setup and the box of the models). | yes |
 | `dies/app/streamlit_app.py` | Entry point. | yes |
 | `dies/app/launcher.py` | The `dies-app` command. | yes |
 

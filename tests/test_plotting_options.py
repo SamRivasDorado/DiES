@@ -166,9 +166,14 @@ def test_failure_figures(res):
     has the band edges; both draw the crack."""
     state = compute_failure_state(res)
     fig = plotting.plot_failure_modes(state)
-    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    legend = fig.axes[0].get_legend()
+    labels = [t.get_text() for t in legend.get_texts()]
+    # Under the map, without 'Below', each state with its share of the nodes that fail
     modes, counts = np.unique(state['failure_mode'], return_counts=True)
-    assert sorted(labels) == sorted('%s (%d)' % (m, c) for m, c in zip(modes, counts))
+    failing = sum(c for m, c in zip(modes, counts) if m not in ('Below', 'Singular'))
+    expected = ['%s (%.1f %%)' % (m, 100.0*c/failing) for m, c in zip(modes, counts) if m not in ('Below', 'Singular')]
+    assert sorted(labels) == sorted(expected)
+    assert legend.get_title().get_text() == 'Share of the nodes that fail'
     plt.close(fig)
     fig = plotting.plot_failure_modes(state, legend=False)
     assert fig.axes[0].get_legend() is None
@@ -180,5 +185,18 @@ def test_failure_figures(res):
     from results import DiESResults
     step = DiESResults(res.x, res.y, {'failure_mode': np.where(res.y > -1000, 'Above', 'Below')}, res.metadata)
     fig = plotting.plot_failure_modes(step)
-    assert len(fig.axes[0].get_legend().get_texts()) == 2
+    assert [t.get_text() for t in fig.axes[0].get_legend().get_texts()] == ['Above (100.0 %)']
     plt.close(fig)
+    # Nothing fails: a note instead of the legend
+    calm = DiESResults(res.x, res.y, {'failure_mode': np.full(res.x.shape, 'Below')}, res.metadata)
+    fig = plotting.plot_failure_modes(calm)
+    assert fig.axes[0].get_legend() is None and fig.axes[0].texts[-1].get_text() == 'No node fails'
+    plt.close(fig)
+
+
+def test_failure_mode_shares():
+    """Shares relative to the nodes that fail: 'Below' and 'Singular' are counted but get no share."""
+    modes = ['Below']*6 + ['Above']*1 + ['Mode I']*3 + ['Singular']*2
+    assert plotting.failure_mode_shares(modes) == [('Below', 6, None), ('Above', 1, 25.0), ('Mode I', 3, 75.0),
+                                                   ('Singular', 2, None)]
+    assert plotting.failure_mode_shares(['Below', 'Below']) == [('Below', 2, None)]

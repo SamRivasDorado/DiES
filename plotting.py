@@ -455,6 +455,20 @@ def plot_plane_stresses(res, stress, angle, step=None, **options):
     return figure
 
 
+def failure_mode_shares(modes):
+    """
+    Number of nodes and share of each failure state (Phase 4, Nov 2026), in the order of
+    FAILURE_MODES, as a list of (state, nodes, percent). The percent is relative to the
+    nodes that fail, i.e. all but 'Below' and 'Singular' (Sam's choice, 27 Nov 2026);
+    'Below' and 'Singular' get None. States without nodes are left out.
+    """
+    modes = np.asarray(modes).astype(str)
+    counts = [(mode, int(np.sum(modes == mode))) for mode in FAILURE_MODES]
+    failing = sum(n for mode, n in counts if mode not in ('Below', 'Singular'))
+    return [(mode, n, (100.0*n/failing if failing and mode not in ('Below', 'Singular') else None))
+            for mode, n in counts if n]
+
+
 def plot_failure_modes(res, legend=True):
     """
     Map of the failure state of each node, one colour per state (Phase 4, Nov 2026;
@@ -465,7 +479,8 @@ def plot_failure_modes(res, legend=True):
 
     res: DiESResults with failure_mode: compute_failure_state(model results) for a
     single model, or one step of a dynamic model.
-    legend: list the states found, with their number of nodes, beside the map.
+    legend: under the map, the states of the nodes that fail, with their share of
+    those nodes (failure_mode_shares); 'Below' is not listed (it is the grey of the map).
     """
     _require(res, 'failure_mode')
     upper_tip, lower_tip = _crack_tips(res)
@@ -474,23 +489,27 @@ def plot_failure_modes(res, legend=True):
     index = {mode: i for i, mode in enumerate(FAILURE_MODES)}
     code = np.vectorize(lambda m: index.get(m, len(FAILURE_MODES) - 1), otypes=[int])(modes)
 
-    # Wider with the legend, so that the map keeps the size of the other figures
-    figure, ax = _axes(res, (8.6, 6) if legend else (6, 6), True)
+    figure, ax = _axes(res, (6, 6), True)
     _set_locators(ax, res)
     ax.pcolormesh(res.x, res.y, code, cmap=ListedColormap(FAILURE_MODE_COLORS),
                   norm=BoundaryNorm(np.arange(len(FAILURE_MODES) + 1) - 0.5, len(FAILURE_MODES)), shading='nearest')
     # The crack in black (red is the colour of the nodes above failure)
     ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='black', lw=3)
     if legend:
-        # Only the states present, with their number of nodes, outside the map on the right
+        # Under the map (Sam, 27 Nov 2026: beside it, it left white space): the states of the
+        # nodes that fail, with their share of those nodes; singular nodes with their number
+        colours = dict(zip(FAILURE_MODES, FAILURE_MODE_COLORS))
         handles, labels = [], []
-        for i, (mode, colour) in enumerate(zip(FAILURE_MODES, FAILURE_MODE_COLORS)):
-            count = int(np.sum(code == i))
-            if count:
-                handles.append(plt.Rectangle((0, 0), 1, 1, fc=colour, ec='0.5'))
-                labels.append('%s (%d)' % (mode, count))
-        ax.legend(handles, labels, fontsize=9, loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0,
-                  title='Nodes', title_fontsize=9)
+        for mode, n, percent in failure_mode_shares(modes):
+            if mode == 'Below':
+                continue
+            handles.append(plt.Rectangle((0, 0), 1, 1, fc=colours[mode], ec='0.5'))
+            labels.append('%s (%.1f %%)' % (mode, percent) if percent is not None else '%s (%d nodes)' % (mode, n))
+        if handles:
+            ax.legend(handles, labels, fontsize=9, loc='upper center', bbox_to_anchor=(0.5, -0.13), ncol=2,
+                      frameon=False, title='Share of the nodes that fail', title_fontsize=9)
+        else:
+            ax.text(0.5, -0.16, 'No node fails', transform=ax.transAxes, ha='center', va='top', fontsize=10)
     return figure
 
 
