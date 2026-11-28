@@ -71,7 +71,7 @@ with st.container(border=True, key='models'):
                             state.scenario_key(static_scenario) if static_scenario else None, form)
     with dynamic_tab:
         dynamic_model.render(dynamic_scenario, dynamic_only,
-                             state.scenario_key(dynamic_scenario) if dynamic_scenario else None)
+                             state.scenario_key(dynamic_scenario) if dynamic_scenario else None, form)
 
 # Save button, in its place of the sidebar, now that the whole form is known
 sidebar.render_save(side_slots['save'], form)

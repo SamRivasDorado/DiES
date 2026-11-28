@@ -187,3 +187,52 @@ def test_export_view():
     assert files == ['scenario.yaml', 'static_results.npz', 'static_results.csv', 's1.png']
     app.multiselect(key='export.figures').set_value(['s1', 's3']).run()
     assert any('prepare the ZIP again' in c.value for c in app.caption)
+
+
+def test_player_of_the_dynamic_model():
+    """Dynamic model (step 3): the player starts at the last step, the buttons move through the
+    steps, every output is drawn, and the probes give their values at the step shown."""
+    app = _start()
+    app.button(key='run_dynamic').click().run()
+    assert app.session_state['Dynamic.step'] == 32 and not app.session_state['Dynamic.playing']
+    app.button(key='Dynamic.previous').click().run()
+    assert app.session_state['Dynamic.step'] == 31
+    app.button(key='Dynamic.first').click().run()
+    app.button(key='Dynamic.next').click().run()
+    assert app.session_state['Dynamic.step'] == 2
+    assert any(c.value.startswith('Step 2 of 32') for c in app.caption)
+    app.button(key='Dynamic.last').click().run()
+    for output in ('planes', 'shear', 'failure_mode', 'first_failure', 'evolution'):
+        app.selectbox(key='Dynamic.output').set_value(output).run()
+        assert not app.exception, output
+    # A probe: its failure state at the step, and the step of its first failure
+    app.selectbox(key='Dynamic.output').set_value('planes').run()
+    app.button(key='Dynamic.add_probe').click().run()
+    table = [d.value for d in app.data_editor if 'Failure state' in d.value.columns][-1]
+    assert 'First failure: step' in table.columns and table['Failure state'].iloc[0]
+    # Play: the page runs again with the player playing (the movie itself runs in the browser)
+    app.button(key='Dynamic.first').click().run()
+    app.button(key='Dynamic.play').click().run()
+    assert app.session_state['Dynamic.playing'] and not app.exception
+    app.button(key='Dynamic.play').click().run()
+    assert not app.session_state['Dynamic.playing']
+
+
+def test_dynamic_export_and_movie():
+    """Dynamic model: the ZIP holds the dynamic results and step figures; the GIF has one frame per step."""
+    from PIL import Image
+    import io
+    app = _start()
+    app.button(key='run_dynamic').click().run()
+    app.multiselect(key='dynexport.figures').set_value([]).run()
+    app.number_input(key='dynexport.every').set_value(16).run()
+    app.button(key='dynexport.prepare').click().run()
+    assert not app.exception
+    request, data, files = app.session_state['dynexport.zip']
+    assert 'dynamic_results.npz' in files and 'dynamic_final_step.csv' in files
+    assert [f for f in files if f.startswith('dynamic_step_')] == ['dynamic_step_016.png', 'dynamic_step_032.png']
+    app.selectbox(key='Dynamic.output').set_value('failure_mode').run()
+    app.button(key='Dynamic.movie').click().run()
+    assert not app.exception
+    gif = Image.open(io.BytesIO(app.session_state['Dynamic.gif'][1]))
+    assert gif.n_frames == 32

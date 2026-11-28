@@ -25,7 +25,10 @@ give the figures of before, pixel for pixel. E.g.
     fig = plotting.plot_stresses(res, 'sxx', cmap='RdBu_r', center_zero=True)
 
 compute_failure_state results (Modeling_functions) are drawn with
-plot_failure_modes and plot_failure_ratio.
+plot_failure_modes and plot_failure_ratio. For dynamic models (Phase 4, step 3):
+plot_dynamic_step takes drawing options too; plot_first_failure maps the load of the
+first failure of each node (up to a step), plot_failure_evolution the number of nodes
+in each failure state against the load; plot_field maps any field.
 """
 
 import numpy as np
@@ -70,8 +73,10 @@ STRESS_KEYS.update({field: (field, label) for field, label in list(STRESS_KEYS.v
 #   contour_labels  label the contours
 #   info_box        the box with the driving stresses (and the material)
 #   arrow_scale     length of the arrows and trajectory segments, relative to the default
+#   above           (dynamic steps) the nodes above failure in red
+#   traces          (dynamic steps) the traces of the failure planes
 STYLE_DEFAULTS = {'cmap': None, 'limits': None, 'center_zero': False, 'contours': True,
-                  'contour_labels': True, 'info_box': True, 'arrow_scale': 1.0}
+                  'contour_labels': True, 'info_box': True, 'arrow_scale': 1.0, 'above': True, 'traces': True}
 # The options of a colour map with contours
 SCALAR_OPTIONS = ('cmap', 'limits', 'center_zero', 'contours', 'contour_labels')
 
@@ -107,7 +112,7 @@ def _style(options, allowed):
             raise PlotError('limits must have vmin < vmax, not ' + repr(style['limits']))
         style['limits'] = (vmin, vmax)
     # True or False for the switches
-    for name in ('center_zero', 'contours', 'contour_labels', 'info_box'):
+    for name in ('center_zero', 'contours', 'contour_labels', 'info_box', 'above', 'traces'):
         if name in style and not isinstance(style[name], bool):
             raise PlotError(name + ' must be True or False, not ' + repr(style[name]))
     # A positive length factor
@@ -602,7 +607,7 @@ def dynamic_color_range(dyn):
     return tuple(true_min_max(dyn[-1]['failure_sn']))
 
 
-def plot_dynamic_step(step, downscaling, color_range=None):
+def plot_dynamic_step(step, downscaling, color_range=None, **options):
     """
     Figure of one step of the dynamic model (the drawing code formerly inside
     the loop of dynamic_model, moved unchanged in Nov 2026).
@@ -617,7 +622,13 @@ def plot_dynamic_step(step, downscaling, color_range=None):
     nodes above failure and draws the traces of the failure planes: mode II
     under compression (red), mode II tension-compression (purple), mixed-mode
     I-II (dodgerblue) and mode I (blue), as (cos b, sin b).
+
+    options (Phase 4, Nov 2026; their defaults give the figure of before): cmap,
+    limits (instead of color_range), contours (the dashed line of sigma_n = 0),
+    info_box, arrow_scale (length of the traces), above (the nodes above failure
+    in red), traces (the traces of the failure planes).
     """
+    style = _style(options, ('cmap', 'limits', 'contours', 'info_box', 'arrow_scale', 'above', 'traces'))
     _require(step, 'failure_sn', 'above_failure', 'plane_mode_I')
     # Fields and metadata of the step
     meta = step.metadata
@@ -633,15 +644,19 @@ def plot_dynamic_step(step, downscaling, color_range=None):
     
     # Plotting stresses, with the colour range of the run (or of this step)
     vmin, vmax = color_range if color_range is not None else true_min_max(current_sn)
-    plot = ax.pcolormesh(x, y, current_sn, cmap='viridis', vmin=vmin, vmax=vmax, shading='nearest')
+    if style['limits'] is not None:
+        vmin, vmax = style['limits']
+    plot = ax.pcolormesh(x, y, current_sn, cmap=style['cmap'] or 'viridis', vmin=vmin, vmax=vmax, shading='nearest')
     # Automatic tick format: decimals only when the range needs them (Nov 2026; it was '%.2f')
     cbar = figure.colorbar(plot, extend='both')
     cbar.set_label(r'$\sigma_n$ (MPa)', rotation=270, labelpad=20, fontsize=15)
     cbar.ax.tick_params(labelsize=12)
-    ax.contour(x, y, current_sn, levels=[0], colors='black', linewidths=0.75, linestyles='--')
+    if style['contours']:
+        ax.contour(x, y, current_sn, levels=[0], colors='black', linewidths=0.75, linestyles='--')
     
     # Plotting the gridcells which are found above failure in each timestep
-    ax.pcolormesh(x, y, current_above, cmap='Reds_r', shading='nearest')
+    if style['above']:
+        ax.pcolormesh(x, y, current_above, cmap='Reds_r', shading='nearest')
     
     # Plotting downsampled versions of the failure plane orientations, one every
     # downscaling nodes in each direction
@@ -655,18 +670,131 @@ def plot_dynamic_step(step, downscaling, color_range=None):
                          ('plane_tc_right', 'purple'), ('plane_tc_left', 'purple'),      # mode II, tension-compression
                          ('plane_mixed_right', 'dodgerblue'), ('plane_mixed_left', 'dodgerblue'),  # mixed mode
                          ('plane_mode_I', 'blue')):                                     # mode I
+        if not style['traces']:
+            break
         # Traces 0.9 times the spacing between the traces drawn (Nov 2026; until then a fixed 250 m)
         ax.quiver(x, y, np.cos(ds[name]), np.sin(ds[name]), headlength=0, headaxislength=0, pivot='middle',
-                  scale=1/(0.9*trace_spacing), units='xy', width=0.08*trace_spacing, headwidth=1, color=colour)
+                  scale=1/(0.9*trace_spacing*style['arrow_scale']), units='xy', width=0.08*trace_spacing,
+                  headwidth=1, color=colour)
     
     # Box with the aperture or slip and the driving stresses reached at this step,
     # anchored at its bottom inside the axes (until Nov 2026 it ran over the x labels)
-    ax.text(0.97, 0.03, length_label + '·' + str(round(percentage, 4)) + ' = ' + str(round(length, 2)) + ' m\n' +
-            r'$\sigma_I$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dx/1e6, 2)) + ' MPa\n' +
-            r'$\sigma_{II}$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dy/1e6, 2)) + ' MPa',
-            bbox=dict(fc='white', ec='black'),
-            horizontalalignment='right', verticalalignment='bottom',
-            transform=ax.transAxes, fontsize=11, zorder=5)
+    if style['info_box']:
+        ax.text(0.97, 0.03, length_label + '·' + str(round(percentage, 4)) + ' = ' + str(round(length, 2)) + ' m\n' +
+                r'$\sigma_I$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dx/1e6, 2)) + ' MPa\n' +
+                r'$\sigma_{II}$·' + str(round(percentage, 4)) + ' = ' + str(round(step_dy/1e6, 2)) + ' MPa',
+                bbox=dict(fc='white', ec='black'),
+                horizontalalignment='right', verticalalignment='bottom',
+                transform=ax.transAxes, fontsize=11, zorder=5)
+    return figure
+
+
+def plot_field(res, field, label=None, factor=1.0, step=None, **options):
+    """
+    Colour map with contours of any field of a results object (Phase 4, Nov 2026), e.g.
+    the shear stress on the failure planes of a dynamic step: plot_field(step, 'failure_ss').
+
+    res: DiESResults; field: the name of one of its fields; label: of the colour bar
+    (default: the name and units of results.FIELD_INFO); factor: multiplies the field
+    (e.g. 1e-6 for Pa -> MPa); step: contour interval (None: automatic);
+    options: cmap, limits, center_zero, contours, contour_labels.
+    """
+    style = _style(options, SCALAR_OPTIONS)
+    _require(res, field)
+    if label is None:
+        unit = res.units.get(field, '')
+        label = field + (' (' + unit + ')' if unit else '')
+    figure, ax = _scalar_field(res, np.asarray(res[field], dtype=float)*factor, label, step, locators=True, **style)
+    return figure
+
+
+def plot_first_failure(dyn, upto=None, unit='MPa', **options):
+    """
+    Map of the first failure of each node in a dynamic model (Phase 4, Nov 2026): the load
+    (DynamicResults.step_loads: the largest driving stress) at which it first failed.
+    Nodes that have not failed are light grey.
+
+    dyn: DynamicResults; upto: only the failures of the first upto steps (1, 2, ...), so
+    that the failure zone can be seen growing step by step; the colours keep the range of
+    the whole run. unit: 'MPa' (the load), 'percent' (of the final load) or 'step'.
+    options: cmap (viridis by default), limits, info_box (step and load reached).
+    """
+    style = _style(options, ('cmap', 'limits', 'info_box'))
+    if unit not in ('MPa', 'percent', 'step'):
+        raise PlotError("unit must be 'MPa', 'percent' or 'step', not " + repr(unit))
+    last = dyn[-1]
+    upper_tip, lower_tip = _crack_tips(last)
+    loads = dyn.step_loads()
+    n = len(dyn)
+    upto = n if upto is None else int(min(max(upto, 1), n))
+    first = dyn.failure_step()
+    # The value of each node, for the whole run (for the colour range) and up to the step shown
+    if unit == 'step':
+        values, label = np.where(first > 0, first, np.nan).astype(float), 'Step of first failure'
+    else:
+        values = dyn.failure_load()/1e6
+        label = 'Driving stress at first failure (MPa)'
+        if unit == 'percent':
+            values, label = values/(loads[-1]/1e6)*100, 'First failure (% of the final load)'
+    finite = values[np.isfinite(values)]
+    vmin, vmax = style['limits'] if style['limits'] is not None else (
+        (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0))
+    if vmin == vmax:
+        vmin, vmax = vmin - 0.5, vmax + 0.5
+    shown = np.where((first > 0) & (first <= upto), values, np.nan)
+
+    figure, ax = _axes(last, (6, 6), True)
+    _set_locators(ax, last)
+    # Light grey for the nodes not failed (yet), under the colours of those failed
+    ax.pcolormesh(last.x, last.y, np.zeros(last.shape), cmap=ListedColormap([FAILURE_MODE_COLORS[0]]),
+                  shading='nearest')
+    plot = ax.pcolormesh(last.x, last.y, np.ma.masked_invalid(shown), cmap=style['cmap'] or 'viridis',
+                         vmin=vmin, vmax=vmax, shading='nearest')
+    cbar = figure.colorbar(plot)
+    cbar.set_label(label, rotation=270, labelpad=20, fontsize=13)
+    cbar.ax.tick_params(labelsize=12)
+    ax.plot((upper_tip[0], lower_tip[0]), (upper_tip[1], lower_tip[1]), c='black', lw=3)
+    if style['info_box']:
+        ax.text(0.97, 0.03, 'Step %d of %d\nDriving stress %g MPa\nFailed nodes: %d'
+                % (upto, n, round(loads[upto - 1]/1e6, 3), int(np.sum((first > 0) & (first <= upto)))),
+                bbox=dict(fc='white', ec='black'), ha='right', va='bottom', transform=ax.transAxes,
+                fontsize=10, zorder=5)
+    return figure
+
+
+def plot_failure_evolution(dyn, current=None, share=False):
+    """
+    Evolution of the failure in a dynamic model (Phase 4, Nov 2026): the number of nodes
+    in each failure state ('Below' left out) against the load of each step
+    (DynamicResults.step_loads, MPa), one line per state in the colours of
+    plot_failure_modes.
+
+    current: step (1, 2, ...) marked with a vertical line (e.g. the step shown in a player);
+    share: the share of all the nodes (%) instead of their number.
+    """
+    loads = dyn.step_loads()/1e6
+    total = dyn[0].shape[0]*dyn[0].shape[1]
+    counts = {mode: [] for mode in FAILURE_MODES if mode != 'Below'}
+    for step in dyn:
+        modes = np.asarray(step['failure_mode']).astype(str)
+        for mode in counts:
+            counts[mode].append(int(np.sum(modes == mode)))
+    figure = plt.figure(figsize=(7, 4.4), tight_layout=True)
+    ax = figure.add_subplot(111)
+    colours = dict(zip(FAILURE_MODES, FAILURE_MODE_COLORS))
+    for mode, values in counts.items():
+        if any(values):
+            values = np.asarray(values, dtype=float)
+            ax.plot(loads, values/total*100 if share else values, c=colours[mode], lw=2,
+                    marker='o', markersize=3, label=mode)
+    if current is not None:
+        ax.axvline(loads[int(min(max(current, 1), len(loads))) - 1], c='0.3', ls='--', lw=1.2)
+    ax.set_xlabel('Driving stress (MPa)', fontsize=12)
+    ax.set_ylabel('Nodes (% of all)' if share else 'Nodes', fontsize=12)
+    ax.grid(alpha=0.3)
+    ax.tick_params(labelsize=11)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(fontsize=9, loc='upper left')
     return figure
 
 

@@ -141,7 +141,27 @@ dyn[k].metadata['dx']              # driving stresses, aperture/slip... of step 
 color_range = plotting.dynamic_color_range(dyn)  # sigma_n range of the final step
 fig = plotting.plot_dynamic_step(dyn[k], 2, color_range)
 dyn.save('dynamic.npz') ; dyn = DynamicResults.load('dynamic.npz')
+
+# Phase 4, step 3 (Nov 2026)
+dyn.step_loads()                   # driving stress of each step: the largest of |dx|, |dy|, |dz| (Pa)
+dyn.failure_load()                 # driving stress at which each node first failed (Pa, NaN = never)
+dyn.failure_load(10)               # the same, counting only the first 10 steps
+fig = plotting.plot_dynamic_step(dyn[k], 2, color_range, cmap='magma', traces=False)
+fig = plotting.plot_field(dyn[k], 'failure_ss', factor=1.0)   # any field as a colour map
+fig = plotting.plot_first_failure(dyn, upto=10)               # load of the first failure, up to step 10
+fig = plotting.plot_failure_evolution(dyn, current=10)        # nodes of each failure state vs the load
 ```
+
+Figures of the dynamic model (the app plays them step by step, see `docs/app.md`):
+
+| Function | What it draws | Options |
+|---|---|---|
+| `plot_dynamic_step(step, downscaling, color_range)` | σn on the failure planes, with the traces of the planes (one every `downscaling` nodes), the line σn = 0 and a red mesh over the nodes above failure. Unchanged by default. | `cmap`, `limits` (instead of `color_range`), `contours` (σn = 0), `info_box`, `arrow_scale` (trace length), `above` (red mesh), `traces` |
+| `plot_field(res, field, label, factor, step)` | Any field as a colour map with contours (e.g. `failure_ss`, τ on the failure planes). | as `plot_stresses` |
+| `plot_first_failure(dyn, upto, unit)` | The driving stress (`unit='MPa'`), the share of the final load (`'percent'`) or the step (`'step'`) at which each node first failed, counting the first `upto` steps; light grey where it has not failed. The colours keep the range of the whole run, so that the failure zone can be watched growing. | `cmap` (viridis), `limits`, `info_box` |
+| `plot_failure_evolution(dyn, current, share)` | Number of nodes (or % of all, `share=True`) in each failure state against the driving stress, in the colours of `plot_failure_modes`; a dashed line at step `current`. | |
+
+The failure-state map of a step is `plot_failure_modes(dyn[k])`.
 
 Each step holds `failure_sn`, `failure_ss` (MPa), `failure_theta` (degrees), `failure_mode`,
 `above_failure`, `failure_jumped` and the seven orientations of the failure planes `plane_*`
@@ -191,6 +211,8 @@ fields listed above, and the metadata of the whole run.
 | `steps`, `metadata` | The list of `DiESResults`; inputs of the run. |
 | `final_mode()` | 2D array with the failure mode of each node at the last step (what `dynamic_model` returns). |
 | `failure_step()` | 2D array with the step (1, 2, ...) at which each node first failed, including `'Above'`; 0 where it never did. |
+| `step_loads()` | The driving stress of each step (Pa): the largest absolute value of dx, dy and dz in its metadata. |
+| `failure_load(upto=None)` | 2D array with the driving stress (Pa) at which each node first failed, NaN where it never did (or not in the first `upto` steps). |
 | `save(path)`, `DynamicResults.load(path)` | Save to and load from `.npz` plus JSON metadata. |
 
 Each step also has every `DiESResults` method (`probe`, `profile`, `mask`, `to_csv`...).

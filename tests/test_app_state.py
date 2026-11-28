@@ -386,3 +386,28 @@ def test_probe_table_edits():
     assert views.apply_table_edits(probes, {}, new_entry) == probes
     # Edits of the computed columns (not editable in the app) are ignored
     assert views.apply_table_edits(probes, {'edited_rows': {0: {'ux (m)': 5}}}, new_entry) == probes
+
+
+# ------------------------------------------------------- outputs of the player (Phase 4, step 3)
+
+def test_dynamic_views_probes_and_profiles():
+    import dies
+    from dies.app import dynamic_views
+    run = dies.load_scenario(os.path.join(ROOT, 'examples', 'dike_example.yaml')).run()
+    dyn = run.dynamic
+    # Probes at a step: the failure state and first failure up to that step
+    rows = dynamic_views.probe_table(run, 32, [(0.0, -550.0, 'P1')])
+    assert rows[0]['Probe'] == 'P1' and rows[0]['Failure state'] != 'Below'
+    step = rows[0]['First failure: step']
+    early = dynamic_views.probe_table(run, int(step) - 1, [(0.0, -550.0, 'P1')])
+    assert early[0]['First failure: step'] == 0 and np.isnan(early[0]['First failure: driving stress (MPa)'])
+    # Profiles of every map output, at a step
+    for item in dynamic_views.OUTPUTS:
+        if item.profile:
+            data = dynamic_views.profile(run, 16, item, (-4950, -100), (4950, -100), n=50)
+            assert len(data['x (m)']) == 50 and len(data) == 4
+    # Options left at their default are not passed to plotting; the options of the app never
+    style = dynamic_views.style_for(dynamic_views.output('planes'),
+                                    {'cmap': 'magma', 'above': True, 'arrow_spacing': 3, 'same_range': True})
+    assert style == {'cmap': 'magma'}
+    assert dynamic_views.step_label(dyn, 16).startswith('Step 16 of 32 · 50 %')

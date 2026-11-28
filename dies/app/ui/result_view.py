@@ -39,7 +39,7 @@ def _key(view, name):
 
 def _spacing_label(spacing, cell):
     # Text of an arrow spacing: 'default' or 'every 3 nodes (300 m)'
-    if spacing is None:
+    if not spacing:
         return 'default (as dies run)'
     return 'every node (%g m)' % cell if spacing == 1 else 'every %d nodes (%g m)' % (spacing, spacing*cell)
 
@@ -58,7 +58,7 @@ def drawing_options(view, item, cell):
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             options['cmap'] = st.selectbox('Colour map', views.COLOUR_MAPS, key=k('cmap'), disabled=not takes('cmap'),
-                                           format_func=lambda name: 'figure default' if name is None else name)
+                                           format_func=lambda name: name or 'figure default') or None
             options['center_zero'] = st.checkbox('Colours centred on 0', key=k('center_zero'),
                                                  disabled=not takes('center_zero'),
                                                  help='Symmetric colours around 0: with a diverging map (RdBu_r, '
@@ -97,7 +97,7 @@ def drawing_options(view, item, cell):
                                    format_func=lambda n: _spacing_label(n, cell),
                                    help='One arrow every n nodes of the grid. Default: the coarser grid of the '
                                         'scenario figures (2.5 times the cell along x, 3 times along y)')
-            options['arrow_spacing'] = spacing if takes('arrow_spacing') else None
+            options['arrow_spacing'] = (spacing or None) if takes('arrow_spacing') else None
     return options
 
 
@@ -198,13 +198,18 @@ def _add_probe(values):
     st.session_state['probes_version'] = st.session_state.get('probes_version', 0) + 1
 
 
-def _probes(view, run):
+def probes(view, run, table=None):
     """
     The probes, in one table (Sam, 27 Nov 2026: their definition and their values together):
     x, y and 'On the map' are edited in the table; the node used and the values at it are
     computed. Rows are added with Add probe (or the + of the table) and removed by selecting
     them and deleting them in the table. Returns the marks for the map.
+
+    table(points): the rows of the table for the probes (x, y, label), each starting with
+    'Probe', 'node x (m)' and 'node y (m)'; by default those of the single model
+    (views.probe_table). The dynamic model passes the values at its step.
     """
+    table = table or (lambda points: views.probe_table(run, points))
     probes = _items('probes')
     default = _probe_default(run, len(probes))
     head, button = st.columns([5, 1])
@@ -214,17 +219,17 @@ def _probes(view, run):
         st.caption('No probe yet: add one to read the values of every field at a point.')
         return []
     labels = ['P%d' % (i + 1) for i in range(len(probes))]
-    rows = views.probe_table(run, [(e['x'], e['y'], label) for e, label in zip(probes, labels)])
+    rows = table([(e['x'], e['y'], label) for e, label in zip(probes, labels)])
     # The table: label, the inputs, then the node used and the values (computed)
-    table = pd.DataFrame([OrderedDict([('Probe', row['Probe']), ('x (m)', e['x']), ('y (m)', e['y']),
+    frame = pd.DataFrame([OrderedDict([('Probe', row['Probe']), ('x (m)', e['x']), ('y (m)', e['y']),
                                        ('On the map', bool(e['show']))]
                                       + [(name, value) for name, value in row.items() if name != 'Probe'])
                           for e, row in zip(probes, rows)])
-    computed = [name for name in table.columns if name not in views.PROBE_INPUTS]
-    config = {name: st.column_config.NumberColumn(name, format='%.4g', disabled=True)
-              for name in computed if name not in ('Probe', 'Failure state')}
+    computed = [name for name in frame.columns if name not in views.PROBE_INPUTS]
+    # Computed columns: numbers with 4 significant digits, texts as they are
+    config = {name: (st.column_config.TextColumn(name, disabled=True) if frame[name].dtype == object
+                     else st.column_config.NumberColumn(name, format='%.4g', disabled=True)) for name in computed}
     config['Probe'] = st.column_config.TextColumn('Probe', disabled=True, width='small')
-    config['Failure state'] = st.column_config.TextColumn('Failure state', disabled=True)
     config['x (m)'] = st.column_config.NumberColumn('x (m)', format='%g', step=1.0, required=False)
     config['y (m)'] = st.column_config.NumberColumn('y (m)', format='%g', step=1.0, required=False)
     config['On the map'] = st.column_config.CheckboxColumn('On the map')
@@ -233,7 +238,7 @@ def _probes(view, run):
     # covers the hint instead of the Add probe button
     st.caption('Edit x, y and "On the map" in the table; the node used and its values follow. To remove probes, '
                'select their rows (left edge of the table) and delete them.')
-    st.data_editor(table, key=key, num_rows='dynamic', hide_index=True, column_config=config, width='stretch',
+    st.data_editor(frame, key=key, num_rows='dynamic', hide_index=True, column_config=config, width='stretch',
                    on_change=_apply_probe_edits, args=(key, default))
     return [(row['node x (m)'], row['node y (m)'], row['Probe']) for e, row in zip(probes, rows) if e['show']]
 
@@ -255,8 +260,13 @@ def _profile_chart_options(view):
     return options
 
 
-def _profiles(view, run, item, run_key):
-    """The profiles: Add button, plot options and one card per profile, two per row. Returns the marks."""
+def profiles(view, run, run_key, tag, data_for):
+    """
+    The profiles: Add button, plot options and one card per profile, two per row. Returns
+    the marks for the map. run_key: identifies the cached plots; tag: what the profiles show
+    (part of their cache key and of the CSV names, e.g. the figure key and the step);
+    data_for(A, B): the profile data along A -> B (views.profile or its dynamic version).
+    """
     profiles = _items('profiles')
     head, button = st.columns([5, 1])
     head.markdown('**Profiles**: the fields of the figure along a line A → B')
@@ -296,14 +306,14 @@ def _profiles(view, run, item, run_key):
                 if (xa, ya) == (xb, yb):
                     st.caption('A and B are the same point.')
                     continue
-                data = views.profile(run, item, (xa, ya), (xb, yb))
+                data = data_for((xa, ya), (xb, yb))
                 colour = figures.line_colour(i)
-                cache = json.dumps([item.key, xa, ya, xb, yb, label, plot_options], sort_keys=True)
+                cache = json.dumps([tag, xa, ya, xb, yb, label, plot_options], sort_keys=True)
                 st.image(compute.figure_bytes('profile:' + view, run_key, cache, 'png', common.SCREEN_DPI,
                                               lambda: figures.plot_profile(data, colour, **plot_options)),
                          width='stretch')
                 st.download_button('CSV', pd.DataFrame(data).to_csv(index=False),
-                                   file_name='profile_%s_%s.csv' % (label, item.key), mime='text/csv',
+                                   file_name='profile_%s_%s.csv' % (label, tag), mime='text/csv',
                                    key=_key(view, 'profile_csv%d' % entry['id']), on_click='ignore')
                 if show:
                     marks.append(((xa, ya), (xb, yb), label))
@@ -346,15 +356,16 @@ def render(view, run_state, form):
     # (drawn under it) are known: an empty slot keeps its place
     _, middle, _ = st.columns([1, 3, 1])
     slot = middle.empty()
-    probes = _probes(view, run)
-    profiles = _profiles(view, run, item, run_state['key'])
+    probe_marks = probes(view, run)
+    profile_marks = profiles(view, run, run_state['key'], item.key,
+                             lambda A, B: views.profile(run, item, A, B))
     with slot.container():
         res = item.results(run, options)
         # Everything that changes the figure goes into the label of its cache entry
         label = json.dumps({'style': style, 'step': step, 'spacing': options.get('arrow_spacing'), 'extra': extra,
-                            'probes': probes, 'profiles': profiles}, sort_keys=True, default=list)
+                            'probes': probe_marks, 'profiles': profile_marks}, sort_keys=True, default=list)
 
         def draw():
-            return figures.add_overlays(item.draw(res, run, style, step, extra), probes, profiles)
+            return figures.add_overlays(item.draw(res, run, style, step, extra), probe_marks, profile_marks)
 
         common.show_figure(view + ':' + item.key, run_state['key'], label, draw, file_stem=item.key)

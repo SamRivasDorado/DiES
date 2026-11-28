@@ -200,3 +200,40 @@ def test_failure_mode_shares():
     assert plotting.failure_mode_shares(modes) == [('Below', 6, None), ('Above', 1, 25.0), ('Mode I', 3, 75.0),
                                                    ('Singular', 2, None)]
     assert plotting.failure_mode_shares(['Below', 'Below']) == [('Below', 2, None)]
+
+
+# ------------------------------------------------------------- dynamic figures (Phase 4, step 3)
+
+def _dynamic():
+    import dies
+    return dies.load_scenario(os.path.join(ROOT, 'examples', 'dike_example.yaml')).run().dynamic
+
+
+def test_dynamic_loads_and_first_failure():
+    dyn = _dynamic()
+    loads = dyn.step_loads()
+    assert len(loads) == len(dyn) and np.isclose(loads[-1], 8e6) and np.all(np.diff(loads) > 0)
+    first = dyn.failure_step()
+    load = dyn.failure_load()
+    assert np.all(np.isnan(load[first == 0])) and np.allclose(load[first > 0], loads[first[first > 0] - 1])
+    # Up to step 10: the later failures are left out
+    upto = dyn.failure_load(10)
+    assert np.all(np.isnan(upto[first > 10])) and np.allclose(upto[(first > 0) & (first <= 10)],
+                                                               load[(first > 0) & (first <= 10)])
+
+
+def test_dynamic_figures_take_their_options():
+    dyn = _dynamic()
+    color_range = plotting.dynamic_color_range(dyn)
+    for figure in (plotting.plot_dynamic_step(dyn[10], 2, color_range, cmap='magma', above=False, traces=False,
+                                              info_box=False, limits=(0, 50)),
+                   plotting.plot_field(dyn[-1], 'failure_ss', factor=1.0, cmap='viridis'),
+                   plotting.plot_first_failure(dyn, 12, 'percent', cmap='plasma'),
+                   plotting.plot_first_failure(dyn, unit='step'),
+                   plotting.plot_failure_evolution(dyn, current=5, share=True)):
+        assert figure.axes
+        plt.close(figure)
+    with pytest.raises(plotting.PlotError):
+        plotting.plot_first_failure(dyn, unit='km')
+    with pytest.raises(plotting.PlotError):
+        plotting.plot_dynamic_step(dyn[0], 1, color_range, above='yes')

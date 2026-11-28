@@ -53,12 +53,14 @@ def run(raw, key):
     return {'key': key, 'results': results, 'elapsed': elapsed, 'warnings': messages, 'cached': cached}
 
 
-@st.cache_data(max_entries=64, show_spinner=False)
+@st.cache_data(max_entries=512, show_spinner=False)
 def figure_bytes(name, key, label, fmt, dpi, _draw):
     """
     Bytes of a figure, cached by (name, key, label, fmt, dpi). _draw is the function
     that draws it (not hashed); key is the scenario key of what it shows, and label any
     other text it shows that is not in the key (e.g. the scenario name in the title).
+    Up to 512 figures are kept: the frames of a dynamic run (one per step and output) must
+    stay cached while it plays.
     """
     from dies.app.figures import render
     return render(_draw, fmt, dpi)

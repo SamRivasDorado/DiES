@@ -28,11 +28,13 @@ TRAJECTORIES = ('arrow_scale', 'arrow_spacing')
 # Options of the app that are not passed to plotting.py
 APP_OPTIONS = ('step', 'arrow_spacing')
 
-# Arrow spacings offered: one arrow every n nodes of the grid
-ARROW_SPACINGS = [None, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20]
+# Arrow spacings offered: one arrow every n nodes of the grid (0: the default one). The
+# defaults of these two lists are not None: a select box whose value is None shows no
+# choice after the page runs again
+ARROW_SPACINGS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20]
 
-# Colour maps offered (None: the figure's own one)
-COLOUR_MAPS = [None, 'viridis', 'cividis', 'plasma', 'magma', 'inferno', 'RdBu_r', 'coolwarm', 'seismic',
+# Colour maps offered ('': the figure's own one)
+COLOUR_MAPS = ['', 'viridis', 'cividis', 'plasma', 'magma', 'inferno', 'RdBu_r', 'coolwarm', 'seismic',
                'Spectral_r', 'twilight']
 
 

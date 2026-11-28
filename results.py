@@ -340,6 +340,27 @@ class DynamicResults(object):
             first = np.where((first == 0) & failed, k, first)
         return first
     
+    def step_loads(self):
+        """
+        The load of each step (Phase 4, Nov 2026): the largest of its three driving
+        stresses |dx|, |dy|, |dz|, in Pa, as a 1D array (one value per step). It is the
+        driving stress the step and steps settings of a scenario refer to.
+        """
+        return np.array([max(abs(step.metadata.get(name, 0.0)) for name in ('dx', 'dy', 'dz'))
+                         for step in self.steps])
+
+    def failure_load(self, upto=None):
+        """
+        2D array with the load (step_loads, Pa) at which each node first failed, and NaN
+        where it never did (Phase 4, Nov 2026). upto: only the failures of the first upto
+        steps (1, 2, ...); None for the whole run.
+        """
+        first = self.failure_step()
+        if upto is not None:
+            first = np.where(first <= upto, first, 0)
+        loads = np.concatenate(([np.nan], self.step_loads()))
+        return loads[first]
+
     def save(self, path):
         """Saves every step to one compressed .npz file; reopen with load()."""
         if not self.steps:
